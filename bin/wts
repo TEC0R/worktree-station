@@ -1,0 +1,714 @@
+#!/usr/bin/env zsh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Terry Cornelusse
+# wts — single entry point of the Worktree Station environment.
+#   wts help  for the list of commands.
+emulate -L zsh
+setopt pipefail
+
+DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
+source "$DOTFILES/lib/config.sh"
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+if [ -t 1 ]; then
+  C_RST=$'\e[0m'; C_DIM=$'\e[2m'; C_B=$'\e[1m'
+  C_OK=$'\e[32m'; C_WARN=$'\e[33m'; C_ERR=$'\e[31m'; C_INFO=$'\e[36m'
+else
+  C_RST= C_DIM= C_B= C_OK= C_WARN= C_ERR= C_INFO=
+fi
+say()  { print -r -- "${C_DIM}·${C_RST} $*"; }
+ok()   { print -r -- "${C_OK}✓${C_RST} $*"; }
+warn() { print -r -- "${C_WARN}~${C_RST} $*"; }
+err()  { print -r -u2 -- "${C_ERR}✗${C_RST} $*"; }
+head_() {  # `print -r` does not interpret \n: the blank line is printed separately
+  print -r -- ""
+  print -r -- "${C_B}── $* ${C_RST}${C_DIM}$(printf '─%.0s' {1..30})${C_RST}"
+}
+
+# ── Helpers repo ──────────────────────────────────────────────────────────────
+wts_entry_for() {  # folder name -> table entry
+  local want="$1" e
+  for e in $WTS_REPOS; do
+    [[ "$(wts_repo_name "$e")" == "$want" ]] && { print -r -- "$e"; return 0; }
+  done
+  return 1
+}
+
+wts_current_repo_dir() {  # walks up to the root of the current repo/worktree
+  git rev-parse --show-toplevel 2>/dev/null
+}
+
+wts_kind_of_dir() {  # dbt | lookml | unknown
+  local d="$1"
+  [[ -f "$d/dbt_project.yml" ]] && { print -r -- dbt; return; }
+  [[ -n "$(print -r -- "$d"/*.lkml(N[1]))" ]] && { print -r -- lookml; return; }
+  print -r -- unknown
+}
+
+# ── Branches ──────────────────────────────────────────────────────────────────
+# Deletes only what is already merged into origin/<main>.
+# Anything carrying unmerged work is kept and listed.
+wts_prune_branches() {
+  local dir="$1" main="$2" force="${3:-}"
+  local -a kept busy gone forced
+  local b
+  while IFS= read -r b; do
+    [[ -z "$b" || "$b" == "$main" ]] && continue
+    if git -C "$dir" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/$b"; then
+      busy+=("$b"); continue
+    fi
+    if git -C "$dir" branch --merged "origin/$main" --format='%(refname:short)' 2>/dev/null | grep -qx "$b"; then
+      git -C "$dir" branch -d "$b" >/dev/null 2>&1 && gone+=("$b")
+    elif [[ "$force" == "--force" ]]; then
+      git -C "$dir" branch -D "$b" >/dev/null 2>&1 && forced+=("$b")
+    else
+      kept+=("$b")
+    fi
+  done < <(git -C "$dir" for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)
+
+  # Past a few branches, the list drowns the rest of the output.
+  _wts_branch_report() {
+    local label="$1" style="$2"; shift 2
+    (( $# )) || return 0
+    if (( $# > 6 )); then
+      $style "$# branches $label"
+    else
+      $style "$label: ${(j:, :)@}"
+    fi
+  }
+  _wts_branch_report "deleted (merged into origin/$main)"       say  "${gone[@]}"
+  _wts_branch_report "FORCE-deleted (not merged)"              warn "${forced[@]}"
+  _wts_branch_report "kept (not merged)"                       warn "${kept[@]}"
+  _wts_branch_report "kept (used by a worktree)"               say  "${busy[@]}"
+  return 0
+}
+
+# ── sync ──────────────────────────────────────────────────────────────────────
+wts_sync_one() {
+  local entry="$1" force="${2:-}"
+  local dir name main
+  dir="$(wts_repo_dir "$entry")"; name="$(wts_repo_name "$entry")"; main="$(wts_repo_branch "$entry")"
+
+  head_ "$name"
+  [[ -d "$dir/.git" ]] || { err "$dir: not a git repository"; return 1; }
+
+  if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then
+    err "$name has uncommitted changes — sync skipped for this repo"
+    git -C "$dir" status --short | head -10
+    return 1
+  fi
+
+  git -C "$dir" fetch --prune origin >/dev/null 2>&1 && ok "fetch" || warn "fetch failed"
+  git -C "$dir" checkout "$main" >/dev/null 2>&1 && ok "on $main" || { err "cannot checkout $main"; return 1; }
+  git -C "$dir" pull --ff-only >/dev/null 2>&1 && ok "up to date" || warn "pull --ff-only failed (diverged?)"
+  wts_prune_branches "$dir" "$main" "$force"
+}
+
+cmd_sync() {
+  local force="" target=""
+  for a in "$@"; do [[ "$a" == "--force" ]] && force="--force" || target="$a"; done
+  if [[ -n "$target" ]]; then
+    local e; e="$(wts_entry_for "$target")" || { err "unknown repo: $target"; return 1; }
+    wts_sync_one "$e" "$force"
+  else
+    local e; for e in $WTS_REPOS; do wts_sync_one "$e" "$force"; done
+  fi
+}
+
+# ── repo ──────────────────────────────────────────────────────────────────────
+# Writes WTS_REPOS to WTS_REPOS_FILE. The first call materializes the default
+# list: from then on, the file is the source of truth.
+wts_repos_save() {
+  mkdir -p "${WTS_REPOS_FILE:h}"
+  local tmp="$WTS_REPOS_FILE.tmp.$$"
+  { print -r -- "# <name>:<default branch>:<dbt|lookml|other>[:<path, default $WTS_ROOT/<name>>] — managed by \`wts repo\`"
+    local e; for e in $WTS_REPOS; do print -r -- "$e"; done
+  } > "$tmp" && mv "$tmp" "$WTS_REPOS_FILE"
+}
+
+# Replaces (or removes, when <new> is empty) the entry <old>. A loop rather than
+# ${arr/pat/rep}: a path may contain glob characters.
+wts_repos_replace() {
+  local old="$1" new="$2" e
+  local -a out
+  for e in $WTS_REPOS; do
+    if [[ "$e" == "$old" ]]; then [[ -n "$new" ]] && out+=("$new"); else out+=("$e"); fi
+  done
+  WTS_REPOS=("${out[@]}")
+}
+
+# https://github.com/o/r(.git), git@github.com:o/r(.git), ssh://git@github.com/o/r -> o/r
+wts_github_slug() {
+  local u="$1"
+  [[ "$u" =~ '^(https?://|ssh://git@|git@)github\.com[:/]([^/]+)/([^/]+)/?$' ]] || return 1
+  print -r -- "${match[2]}/${${match[3]%/}%.git}"
+}
+
+cmd_repo() {
+  local sub="${1:-list}"; (( $# )) && shift
+  case "$sub" in
+    list)
+      local e dir
+      for e in $WTS_REPOS; do
+        dir="$(wts_repo_dir "$e")"
+        print -r -- "$(wts_repo_name "$e")  ${C_DIM}base=$(wts_repo_branch "$e") type=$(wts_repo_kind "$e") $dir${C_RST}$([[ -d "$dir/.git" ]] || print -r -- "  ${C_ERR}absent${C_RST}")"
+      done ;;
+    add)
+      # wts repo add <name|path|github url> [branch] [type] [--dest <path>]
+      local -a pos; local dest=""
+      while (( $# )); do
+        case "$1" in
+          --dest) dest="${2:-}"; shift 2 || { err "--dest expects a path"; return 1; } ;;
+          *) pos+=("$1"); shift ;;
+        esac
+      done
+      local src="${pos[1]:-}" base="${pos[2]:-}" kind="${pos[3]:-}"
+      [[ -n "$src" ]] || { err "usage: wts repo add <name|path|github url> [branch] [type] [--dest <path>]"; return 1; }
+      [[ "$base$kind" != *:* ]] || { err "':' is not allowed in the branch or the type"; return 1; }
+
+      local slug="" dir name
+      [[ -n "$dest" ]] && { [[ "$dest" == "~"* ]] && dest="$HOME${dest#\~}"; dest="${dest:A}"; }
+      if slug="$(wts_github_slug "$src")"; then
+        dir="${dest:-$WTS_ROOT/${slug:t}}"
+        # --dest pointing at an already-filled folder (not a clone) = parent folder.
+        [[ -n "$dest" && -d "$dest" && ! -d "$dest/.git" && -n "$(print -r -- "$dest"/*(DN[1]))" ]] \
+          && dir="$dest/${slug:t}"
+      elif [[ "$src" == */* || "$src" == "~"* || "$src" == .* ]]; then
+        [[ -z "$dest" ]] || { err "--dest only applies to a github url"; return 1; }
+        [[ "$src" == "~"* ]] && src="$HOME${src#\~}"
+        dir="${src:A}"
+      else
+        [[ -z "$dest" ]] || { err "--dest only applies to a github url"; return 1; }
+        dir="$WTS_ROOT/$src"
+      fi
+      name="${dir:t}"
+      [[ "$name$dir" != *:* ]] || { err "':' is not allowed in the path: $dir"; return 1; }
+      wts_entry_for "$name" >/dev/null && { err "already declared: $name"; return 1; }
+
+      if [[ -n "$slug" ]]; then
+        if [[ -d "$dir/.git" ]]; then
+          local have; have="$(wts_github_slug "$(git -C "$dir" remote get-url origin 2>/dev/null)")"
+          [[ "${have:l}" == "${slug:l}" ]] || { err "$dir already exists and points to ${have:-another remote}, not $slug"; return 1; }
+          say "$dir already cloned, reusing it"
+        elif [[ -e "$dir" && -n "$(print -r -- "$dir"/*(DN[1]))" ]]; then
+          err "$dir exists and is not empty"; return 1
+        else
+          mkdir -p "${dir:h}"
+          if command -v gh >/dev/null; then
+            gh repo clone "$slug" "$dir" --no-upstream -- --quiet || { err "cannot clone $slug"; return 1; }
+          else
+            git clone --quiet "$src" "$dir" || { err "cannot clone $src"; return 1; }
+          fi
+          ok "cloned $slug -> $dir"
+        fi
+      fi
+      [[ -d "$dir/.git" ]] || { err "not a git clone: $dir"; return 1; }
+
+      if [[ -z "$base" ]]; then
+        base="$(git -C "$dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)"; base="${base#origin/}"
+        [[ -n "$base" ]] || base="$(git -C "$dir" branch --show-current 2>/dev/null)"
+        [[ -n "$base" ]] || { err "default branch not found, pass it as an argument"; return 1; }
+      fi
+      if [[ -z "$kind" ]]; then
+        kind="$(wts_kind_of_dir "$dir")"; [[ "$kind" == unknown ]] && kind=other
+      fi
+      local entry="$name:$base:$kind"
+      [[ "$dir" == "${WTS_ROOT:A}/$name" || "$dir" == "$WTS_ROOT/$name" ]] || entry+=":$dir"
+      WTS_REPOS+=("$entry")
+      wts_repos_save && ok "added $name (base=$base, type=$kind, $dir)" ;;
+    rm)
+      local name="${1:-}" e
+      [[ -n "$name" ]] || { err "usage: wts repo rm <name>"; return 1; }
+      e="$(wts_entry_for "$name")" || { err "unknown repo: $name"; return 1; }
+      wts_repos_replace "$e" ""
+      wts_repos_save && ok "removed $name (clone and worktrees left on disk)" ;;
+    base)
+      local name="${1:-}" branch="${2:-}" e p
+      [[ -n "$name" && -n "$branch" ]] || { err "usage: wts repo base <name> <branch>"; return 1; }
+      [[ "$branch" != *:* ]] || { err "':' is not allowed in the branch"; return 1; }
+      e="$(wts_entry_for "$name")" || { err "unknown repo: $name"; return 1; }
+      git -C "$(wts_repo_dir "$e")" rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null \
+        || warn "origin/$branch not found (not fetched yet?)"
+      p="$(wts_repo_path "$e")"
+      wts_repos_replace "$e" "$name:$branch:$(wts_repo_kind "$e")${p:+:$p}"
+      wts_repos_save && ok "$name: base=$branch" ;;
+    *) err "usage: wts repo list|add|rm|base"; return 1 ;;
+  esac
+}
+
+# ── worktrees ─────────────────────────────────────────────────────────────────
+# A worktree is "busy" when it has uncommitted changes, unpushed commits, or
+# recent file activity. Never deleted in those cases (unless --force).
+wts_wt_busy() {
+  local wt="$1" max_h="${2:-8}"
+  [[ -d "$wt" ]] || return 1
+  [[ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]] && { print -r -- "uncommitted changes"; return 0; }
+
+  local ahead
+  ahead=$(git -C "$wt" rev-list --count '@{upstream}..HEAD' 2>/dev/null)
+  if [[ -n "$ahead" && "$ahead" -gt 0 ]]; then print -r -- "$ahead unpushed commit(s)"; return 0; fi
+  if ! git -C "$wt" rev-parse '@{upstream}' >/dev/null 2>&1; then
+    local base n
+    base=$(git -C "$wt" for-each-ref --format='%(refname:short)' refs/remotes/origin/HEAD 2>/dev/null)
+    n=$(git -C "$wt" rev-list --count "${base:-origin/HEAD}..HEAD" 2>/dev/null)
+    [[ -n "$n" && "$n" -gt 0 ]] && { print -r -- "$n local commit(s) with no remote"; return 0; }
+  fi
+
+  local recent
+  recent=$(find "$wt" -type d \( -name .git -o -name target -o -name dbt_packages -o -name logs \) -prune \
+           -o -type f -mmin "-$(( max_h * 60 ))" -print 2>/dev/null | head -1)
+  [[ -n "$recent" ]] && { print -r -- "file changed less than ${max_h}h ago"; return 0; }
+  return 1
+}
+
+wts_wt_prune() {
+  local entry="$1" max_h="${2:-8}" force="${3:-}"
+  local repo; repo="$(wts_repo_dir "$entry")"
+  [[ -d "$repo/.git" ]] || return 0
+  local repo_real; repo_real="$(cd "$repo" && pwd -P)"
+  git -C "$repo" worktree prune 2>/dev/null
+
+  local line wt br reason
+  while IFS='|' read -r wt br; do
+    [[ -z "$wt" || "$wt" == "$repo_real" || "$wt" == "$repo" ]] && continue
+    if [[ ! -d "$wt" ]]; then
+      git -C "$repo" worktree remove "$wt" --force 2>/dev/null
+      [[ -n "$br" ]] && git -C "$repo" branch -D "$br" >/dev/null 2>&1
+      say "stale entry cleaned: ${wt:t}"
+      continue
+    fi
+    if [[ "$force" != "--force" ]] && reason="$(wts_wt_busy "$wt" "$max_h")"; then
+      warn "keeping ${wt:t} ($reason)"
+      continue
+    fi
+    if git -C "$repo" worktree remove "$wt" --force 2>/dev/null; then
+      ok "deleted ${wt:t}"
+      [[ -n "$br" ]] && git -C "$repo" branch -D "$br" >/dev/null 2>&1
+    else
+      err "cannot delete: $wt"
+    fi
+  done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | awk '
+      /^worktree / { wt=$2 }
+      /^branch /   { br=substr($2, index($2,"heads/")+6) }
+      /^$/         { if (wt != "") print wt "|" br; wt=""; br="" }
+      END          { if (wt != "") print wt "|" br }')
+}
+
+# Regenerates the .code-workspace of an existing session (useful for sessions
+# created before the extension, or whose file was deleted).
+wts_wt_ws() {
+  local id="$1"
+  [[ -n "$id" ]] || { err "usage: wts wt ws <session-timestamp>"; return 1; }
+  local -a folders
+  local e repo wt br
+  for e in $WTS_REPOS; do
+    repo="$(wts_repo_dir "$e")"
+    [[ -d "$repo/.git" ]] || continue
+    while IFS='|' read -r wt br; do
+      [[ -n "$wt" && -d "$wt" && "${wt:t}" == *"-$id" ]] && folders+=("$wt")
+    done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | awk '
+        /^worktree / { wt=$2 } /^branch / { br=substr($2, index($2,"heads/")+6) }
+        /^$/ { if (wt != "") print wt "|" br; wt=""; br="" }
+        END { if (wt != "") print wt "|" br }')
+  done
+  (( ${#folders} )) || { err "no worktree for session $id"; return 1; }
+  local ws="$WTS_WORKTREE_DIR/session-${id}.code-workspace"
+  wts_write_workspace "$ws" $folders
+  print -r -- "WORKSPACE=$ws"
+}
+
+cmd_wt() {
+  case "${1:-}" in
+    list)  shift; wts_wt_list "$@"; return ;;
+    ws)    shift; wts_wt_ws "$@"; return ;;
+    clean) shift; head_ "Worktree cleanup"
+           local e; for e in $WTS_REPOS; do wts_wt_prune "$e" "${1:-8}" "${2:-}"; done; return ;;
+    rm)    shift; wts_wt_rm "$@"; return ;;
+  esac
+
+  # --no-open  : the VS Code extension creates the session and takes the folders
+  #              into the current window; running `code` here would open a 2nd window.
+  # --no-parse : `dbt parse` is 15 of the 17 seconds of a creation. The extension
+  #              reruns it in the background, once the session is open.
+  # --repo <name>[:<branch>] (repeatable): session limited to these repos, in that
+  #              order. Without --repo: every repo, branches as positional args.
+  local no_open="" no_parse=""
+  local -a picked
+  while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+      --no-open)  no_open=1 ;;
+      --no-parse) no_parse=1 ;;
+      --repo)     [[ -n "${2:-}" ]] || { err "--repo expects <name>[:<branch>]"; return 1; }
+                  picked+=("$2"); shift ;;
+      *) err "unknown option: $1"; return 1 ;;
+    esac
+    shift
+  done
+
+  # "entry|branch" pairs to create.
+  local -a todo
+  local e p pname pbranch
+  if (( ${#picked} )); then
+    (( $# == 0 )) || { err "positional branches and --repo cannot be combined"; return 1; }
+    for p in $picked; do
+      pname="${p%%:*}"; pbranch=""; [[ "$p" == *:* ]] && pbranch="${p#*:}"
+      e="$(wts_entry_for "$pname")" || { err "unknown repo: $pname"; return 1; }
+      todo+=("$e|${pbranch:-$(wts_repo_branch "$e")}")
+    done
+  else
+    local i=1
+    for e in $WTS_REPOS; do
+      todo+=("$e|${argv[$i]:-$(wts_repo_branch "$e")}")   # i-th argument, else the default branch
+      (( i++ ))
+    done
+  fi
+
+  (( ${#todo} )) || { err "no repo declared: add one with 'wts repo add <name|path|github url>'"; return 1; }
+
+  local ts="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$WTS_WORKTREE_DIR"
+
+  # No cleanup here: creating a session must never delete the previous ones (nor,
+  # as a side effect, their kanban cards). `wts wt clean` does it on demand.
+  head_ "Creating worktrees"
+  local -a folders
+  local t name dir branch safe wt
+  for t in $todo; do
+    e="${t%|*}"; branch="${t##*|}"
+    name="$(wts_repo_name "$e")"; dir="$(wts_repo_dir "$e")"
+    safe="${branch//\//-}"
+    wt="$WTS_WORKTREE_DIR/${name}-${safe}-${ts}"
+
+    git -C "$dir" fetch --prune origin >/dev/null 2>&1
+
+    if git -C "$dir" worktree add "$wt" -b "wt-${safe}-${ts}" "origin/${branch}" >/dev/null 2>&1; then
+      ok "$name → ${wt:t} ${C_DIM}(origin/$branch)${C_RST}"
+      folders+=("$wt")
+    else
+      err "$name: branch 'origin/${branch}' not found"
+    fi
+  done
+
+  (( ${#folders} )) || { err "no worktree created"; return 1; }
+
+  head_ "dbt bootstrap"
+  local f common main_repo
+  for f in $folders; do
+    [[ -f "$f/dbt_project.yml" ]] && command -v "$WTS_DBT" >/dev/null || continue
+
+    # A fresh worktree has no dbt_packages (gitignored folder), and without it
+    # `dbt parse` refuses to run: the dbt Power User lineage stays empty for the
+    # whole session. Copying from the main clone avoids a networked `dbt deps` on
+    # every creation; only done when packages.yml is identical on both sides.
+    if [[ ! -d "$f/dbt_packages" ]]; then
+      common="$(git -C "$f" rev-parse --git-common-dir 2>/dev/null)"
+      [[ "$common" == /* ]] || common="$f/$common"
+      main_repo="${common:h}"
+      if [[ -d "$main_repo/dbt_packages" ]] && \
+         diff -q "$main_repo/packages.yml" "$f/packages.yml" >/dev/null 2>&1; then
+        cp -R "$main_repo/dbt_packages" "$f/dbt_packages" && ok "dbt_packages copied from ${main_repo:t}"
+      else
+        say "dbt deps in ${f:t} (packages.yml differs from the main clone)…"
+        ( cd "$f" && "$WTS_DBT" deps --quiet ) || warn "dbt deps failed in ${f:t}"
+      fi
+    fi
+
+    if [[ -n "$no_parse" ]]; then
+      say "dbt parse deferred → ${f:t}"
+    elif ( cd "$f" && "$WTS_DBT" parse --target dev --quiet >/dev/null 2>&1 ); then
+      ok "manifest generated → ${f:t}/target"
+    else
+      warn "dbt parse failed in ${f:t}: lineage will be empty at startup"
+    fi
+  done
+
+  local ws="$WTS_WORKTREE_DIR/session-${ts}.code-workspace"
+  wts_write_workspace "$ws" $folders
+
+  if [[ -n "$no_open" ]]; then
+    # Machine output, read by the extension. One line per folder, then the workspace.
+    local f2
+    for f2 in $folders; do print -r -- "FOLDER=$f2"; done
+    print -r -- "WORKSPACE=$ws"
+    return 0
+  fi
+
+  head_ "Opening VS Code"
+  ok "workspace ${ws:t}"
+  # --disable-workspace-trust: a never-opened path triggers the Trust prompt, and
+  # until it is granted Python/dbt Power User run in restricted mode.
+  if [[ -n "$WTS_PROFILE" ]]; then
+    code --profile "$WTS_PROFILE" --disable-workspace-trust "$ws"
+  else
+    code --disable-workspace-trust "$ws"
+  fi
+}
+
+# Generates a multi-root workspace: one window, all the session's repos, and
+# extension settings pointed at THIS worktree (no more .vscode copies).
+wts_write_workspace() {
+  local out="$1"; shift
+  local -a folders=("$@")
+  local dbt_wt=""
+  local f
+  for f in $folders; do [[ -f "$f/dbt_project.yml" ]] && dbt_wt="$f"; done
+
+  {
+    print -r -- '{'
+    print -r -- '  "folders": ['
+    local n=${#folders} idx=0
+    for f in $folders; do
+      (( idx++ ))
+      printf '    { "name": "%s", "path": "%s" }%s\n' "${f:t}" "$f" "$([[ $idx -lt $n ]] && print -n ,)"
+    done
+    print -r -- '  ],'
+    print -r -- '  "settings": {'
+    [[ -n "$WTS_VENV" ]] && printf '    "python.defaultInterpreterPath": "%s",\n' "$WTS_PYTHON"
+    printf '    "nao.dbt.deferManifestPath": "%s",\n' "${dbt_wt:+$dbt_wt/target}"
+    print -r -- '    "nao.dbt.enabled": true,'
+    print -r -- '    "nao.dbt.defer": true,'
+    print -r -- '    "nao.dbt.deferFavorState": false,'
+    print -r -- '    "dbt.queryLimit": 500,'
+    print -r -- '    "files.associations": { "*.sql": "jinja-sql", "*.yml": "jinja-yaml" }'
+    print -r -- '  }'
+    print -r -- '}'
+  } > "$out"
+}
+
+wts_wt_list() {
+  local e repo name wt br reason
+  for e in $WTS_REPOS; do
+    repo="$(wts_repo_dir "$e")"; name="$(wts_repo_name "$e")"
+    head_ "$name"
+    while IFS='|' read -r wt br; do
+      [[ -z "$wt" ]] && continue
+      [[ "$wt" == "$(cd "$repo" && pwd -P)" ]] && continue
+      if reason="$(wts_wt_busy "$wt" 8)"; then
+        print -r -- "  ${C_WARN}●${C_RST} ${wt:t}  ${C_DIM}$br — $reason${C_RST}"
+      else
+        print -r -- "  ${C_DIM}○ ${wt:t}  $br — removable${C_RST}"
+      fi
+    done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | awk '
+        /^worktree / { wt=$2 } /^branch / { br=substr($2, index($2,"heads/")+6) }
+        /^$/ { if (wt != "") print wt "|" br; wt=""; br="" }
+        END { if (wt != "") print wt "|" br }')
+  done
+}
+
+wts_wt_rm() {
+  local target="$1"
+  [[ -n "$target" ]] || { err "usage: wts wt rm <worktree-path>"; return 1; }
+  local e repo
+  for e in $WTS_REPOS; do
+    repo="$(wts_repo_dir "$e")"
+    git -C "$repo" worktree remove "$target" --force 2>/dev/null && { ok "deleted $target"; return 0; }
+  done
+  err "worktree not found: $target"; return 1
+}
+
+# ── dbt ───────────────────────────────────────────────────────────────────────
+cmd_dbt() {
+  local sub="${1:-}"; shift 2>/dev/null
+  command -v "$WTS_DBT" >/dev/null || { err "dbt not found: $WTS_DBT"; return 1; }
+
+  local root; root="$(wts_current_repo_dir)"
+  if [[ -z "$root" || ! -f "$root/dbt_project.yml" ]]; then
+    local e; for e in $WTS_REPOS; do   # else the first declared dbt repo
+      [[ "$(wts_repo_kind "$e")" == dbt ]] && { root="$(wts_repo_dir "$e")"; break; }
+    done
+    [[ -n "$root" && -f "$root/dbt_project.yml" ]] || { err "no dbt project here, and no dbt repo declared"; return 1; }
+  fi
+
+  local sel="${1:-}"
+  case "$sub" in
+    run|build|test)
+      [[ -n "$sel" ]] || { err "usage: wts dbt $sub <model|selector>"; return 1; }
+      ( cd "$root" && "$WTS_DBT" "$sub" --select "$sel" "${WTS_DBT_FLAGS[@]}" "${WTS_DBT_QUIET[@]}" ) ;;
+    down)   # build the model + everything downstream
+      [[ -n "$sel" ]] || { err "usage: wts dbt down <model>"; return 1; }
+      ( cd "$root" && "$WTS_DBT" build --select "${sel}+" "${WTS_DBT_FLAGS[@]}" "${WTS_DBT_QUIET[@]}" ) ;;
+    up)     # build the model + everything upstream
+      [[ -n "$sel" ]] || { err "usage: wts dbt up <model>"; return 1; }
+      ( cd "$root" && "$WTS_DBT" build --select "+${sel}" "${WTS_DBT_FLAGS[@]}" "${WTS_DBT_QUIET[@]}" ) ;;
+    show)
+      [[ -n "$sel" ]] || { err "usage: wts dbt show <model>"; return 1; }
+      ( cd "$root" && "$WTS_DBT" show --select "$sel" --limit "${2:-20}" --target dev ) ;;
+    compile)
+      ( cd "$root" && "$WTS_DBT" compile --select "$sel" --target dev --quiet ) ;;
+    parse)
+      ( cd "$root" && "$WTS_DBT" parse --target dev --quiet ) && ok "manifest up to date → $root/target" ;;
+    ls|list)
+      # `state:modified` needs a comparison manifest: --state, not just --defer.
+      ( cd "$root" && "$WTS_DBT" list --select "${sel:-state:modified+}" \
+          --resource-type model --state state/ --target dev ) ;;
+    *)
+      err "unknown dbt subcommand: ${sub:-<empty>}"
+      print -r -- "  run | build | test | down | up | show | compile | parse | ls"
+      return 1 ;;
+  esac
+}
+
+# ── format / lint ─────────────────────────────────────────────────────────────
+cmd_fmt() {
+  local file="${1:-}"
+  [[ -n "$file" ]] || { err "usage: wts fmt <file.sql>"; return 1; }
+  command -v "$WTS_SQLFLUFF" >/dev/null || { err "sqlfluff not found: $WTS_SQLFLUFF"; return 1; }
+  local root; root="$(cd "${file:h}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)"
+  # templater = dbt: sqlfluff recompiles the project, expect 1 to 3 minutes.
+  say "sqlfluff (dbt templater) — several minutes on a large project…"
+  ( cd "${root:-.}" && "$WTS_SQLFLUFF" fix "$file" --force ) && ok "formatted: ${file:t}"
+}
+
+cmd_lkml() {
+  local root; root="$(wts_current_repo_dir)"
+  [[ -n "$root" ]] || { err "not inside a git repository"; return 1; }
+  if [[ -f "$root/scripts/parse_lookml.py" ]]; then
+    ( cd "$root" && "${WTS_PYTHON:-python3}" scripts/parse_lookml.py "${1:-.}" )
+  else
+    err "scripts/parse_lookml.py not found in $root"; return 1
+  fi
+}
+
+# ── up ────────────────────────────────────────────────────────────────────────
+cmd_up() {
+  head_ "Updating Claude Code"
+  command -v claude >/dev/null && { claude update 2>/dev/null && ok "claude up to date" || warn "claude update failed"; }
+
+  head_ "Worktree cleanup"
+  local e; for e in $WTS_REPOS; do wts_wt_prune "$e" 8; done
+
+  cmd_sync "$@"
+
+  head_ "Done"
+  print -r -- "${C_DIM}wts wt   → new work session${C_RST}"
+}
+
+# ── profile VS Code ───────────────────────────────────────────────────────────
+cmd_profile() {
+  case "${1:-build}" in
+    build)
+      "${WTS_PYTHON:-python3}" "$DOTFILES/bin/build-profile.py" "$DOTFILES" \
+        && ok "profile generated → $DOTFILES/vscode/${WTS_PROFILE_FILE}" ;;
+    install)
+      cmd_profile build || return 1
+      print -r -- "Import: VS Code → palette (⇧⌘P) → ${C_B}Profiles: Import Profile…${C_RST}"
+      print -r -- "File: $DOTFILES/vscode/${WTS_PROFILE_FILE}"
+      open -R "$DOTFILES/vscode/${WTS_PROFILE_FILE}" 2>/dev/null ;;
+    *) err "usage: wts profile [build|install]"; return 1 ;;
+  esac
+}
+
+# ── doctor ────────────────────────────────────────────────────────────────────
+cmd_doctor() {
+  local rc=0
+  head_ "Environment"
+  local chk
+  _chk() { # label, test-cmd
+    if eval "$2" >/dev/null 2>&1; then ok "$1"; else err "$1"; rc=1; fi
+  }
+  _chk "dotfiles       $DOTFILES"                 "[ -d '$DOTFILES' ]"
+  _chk ".zshrc → dotfiles"                        "[ \"\$(readlink $HOME/.zshrc)\" = '$DOTFILES/zsh/zshrc' ]"
+  _chk "wts in PATH"                              "command -v wts"
+  _opt() { # label, test-cmd: optional tool, a warning only
+    if eval "$2" >/dev/null 2>&1; then ok "$1"; else warn "$1 (optional)"; fi
+  }
+  _opt "dbt            $WTS_DBT"                  "command -v '$WTS_DBT'"
+  _opt "sqlfluff       $WTS_SQLFLUFF"             "command -v '$WTS_SQLFLUFF'"
+  _opt "python         $WTS_PYTHON"               "command -v '$WTS_PYTHON'"
+  _chk "code CLI"                                 "command -v code"
+  _chk "secrets 600    ~/.config/wts/secrets.env" "[ \"\$(stat -f '%OLp' $HOME/.config/wts/secrets.env 2>/dev/null)\" = '600' ]"
+
+  head_ "Repos"
+  local e dir name main br dirty
+  for e in $WTS_REPOS; do
+    dir="$(wts_repo_dir "$e")"; name="$(wts_repo_name "$e")"; main="$(wts_repo_branch "$e")"
+    if [[ -d "$dir/.git" ]]; then
+      br="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+      dirty="$(git -C "$dir" status --porcelain | wc -l | tr -d ' ')"
+      print -r -- "  $name  ${C_DIM}branch=$br (default $main), $dirty changed file(s)${C_RST}"
+    else
+      err "  $name not found"; rc=1
+    fi
+  done
+
+  head_ "VS Code"
+  local U="$HOME/Library/Application Support/Code/User"
+  for f in settings.json keybindings.json tasks.json; do
+    if [[ -L "$U/$f" ]]; then ok "$f → $(readlink "$U/$f" | sed "s|$HOME|~|")"
+    elif [[ -f "$U/$f" ]]; then warn "$f exists but is not a link to the dotfiles"
+    else err "$f missing"; rc=1; fi
+  done
+  [[ -f "$DOTFILES/vscode/${WTS_PROFILE_FILE}" ]] \
+    && ok "profile ${WTS_PROFILE_FILE%.code-profile} generated" || warn "profile not generated (wts profile build)"
+
+  if code --list-extensions 2>/dev/null | grep -qx 'tec0r.worktree-station'; then
+    ok "Worktree Station extension installed"
+  else
+    warn "Worktree Station extension missing (./install.sh builds and installs it)"
+  fi
+  _chk "api JSON       wts api config" "'${WTS_PYTHON:-python3}' '$DOTFILES/bin/wts-api.py' config"
+
+  return $rc
+}
+
+# ── help ──────────────────────────────────────────────────────────────────────
+cmd_help() {
+  print -r -- "
+${C_B}wts${C_RST} — Worktree Station environment
+
+${C_B}Session${C_RST}
+  wts up [--force]          update claude + sync the repos + worktree cleanup
+  wts sync [repo] [--force] pull --ff-only + delete merged branches
+  wts wt [br...]            create a session (one worktree per repo) and open VS Code
+  wts wt --repo <name>[:<br>] session limited to these repos (repeatable)
+  wts wt --no-open [...]    create the session without launching VS Code (FOLDER= output)
+  wts wt --no-parse [...]   create the session without waiting for 'dbt parse'
+  wts wt list               worktree status (busy / removable)
+  wts wt clean [h] [--force] delete worktrees idle for h hours (default 8)
+  wts wt rm <path>          delete one worktree
+  wts wt ws <timestamp>     regenerate the .code-workspace of an existing session
+
+${C_B}Repos${C_RST}  ${C_DIM}(list stored in \$WTS_REPOS_FILE)${C_RST}
+  wts repo [list]           declared repos
+  wts repo add <name|path|github url> [branch] [type] [--dest <path>]
+                            declare a clone; a github url is cloned (into --dest, default \$WTS_ROOT/<repo>)
+  wts repo rm <name>        remove a repo (nothing is deleted from disk)
+  wts repo base <name> <br> change its default branch
+
+${C_B}dbt${C_RST}  ${C_DIM}(from any worktree)${C_RST}
+  wts dbt build <model>     build + test the model
+  wts dbt down  <model>     build the model and everything downstream  (model+)
+  wts dbt up    <model>     build the model and everything upstream  (+model)
+  wts dbt run|test <model>
+  wts dbt show  <model> [n] preview rows
+  wts dbt compile <model>
+  wts dbt parse             regenerate the manifest (dbt Power User lineage)
+  wts dbt ls [selector]     list models (default: state:modified+)
+
+${C_B}Misc${C_RST}
+  wts fmt <file.sql>        sqlfluff fix
+  wts lkml [path]           parse/validate LookML
+  wts profile build|install VS Code profile
+  wts doctor                full diagnostics
+  wts api <subcommand>      state as JSON (sessions|repos|changed|config)
+${C_DIM}
+dbt flags applied automatically: ${WTS_DBT_FLAGS[*]} --quiet
+Config: \$DOTFILES/lib/config.sh${C_RST}
+"
+}
+
+# ── dispatch ──────────────────────────────────────────────────────────────────
+case "${1:-help}" in
+  up)       shift; cmd_up "$@" ;;
+  sync)     shift; cmd_sync "$@" ;;
+  repo)     shift; cmd_repo "$@" ;;
+  wt)       shift; cmd_wt "$@" ;;
+  dbt)      shift; cmd_dbt "$@" ;;
+  fmt)      shift; cmd_fmt "$@" ;;
+  lkml)     shift; cmd_lkml "$@" ;;
+  profile)  shift; cmd_profile "$@" ;;
+  doctor)   shift; cmd_doctor "$@" ;;
+  api)      shift; exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-api.py" "$@" ;;
+  help|-h|--help) cmd_help ;;
+  *) err "unknown command: $1"; cmd_help; exit 1 ;;
+esac

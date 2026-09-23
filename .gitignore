@@ -1,0 +1,10 @@
+# secrets never live in this repo
+secrets.env
+*.local.zsh
+.DS_Store
+
+# VS Code extension: build artifacts, never versioned
+vscode-extension/*/node_modules/
+vscode-extension/*/dist/
+vscode-extension/*/out/
+vscode-extension/*/*.vsix

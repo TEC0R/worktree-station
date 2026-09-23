@@ -1,0 +1,12 @@
+{
+  "Push DBT doc to notion": {
+    "prefix": "push-doc", 
+    "body": [
+      "I want to generate documentation for this open dbt model and push it to Notion.",
+      "",
+      "1. Read the current file logic.",
+      "2. Read the YAML file and generate the documentation using the template defined in my custom instructions.",
+    ],
+    "description": "Prompt AI to push DBT docs to Notion"
+  }
+}

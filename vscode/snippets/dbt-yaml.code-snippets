@@ -1,0 +1,66 @@
+{
+  "dbt: model entry (schema.yml)": {
+    "scope": "yaml,jinja-yaml",
+    "prefix": "dymodel",
+    "body": [
+      "  - name: ${1:model_name}",
+      "    description: \"${2:What this model is for, at what grain.}\"",
+      "    columns:",
+      "      - name: ${3:id}",
+      "        description: \"${4:Primary key.}\"",
+      "        data_tests:",
+      "          - unique",
+      "          - not_null",
+      "$0"
+    ],
+    "description": "Documented model entry + key tests"
+  },
+  "dbt: documented column": {
+    "scope": "yaml,jinja-yaml",
+    "prefix": "dycol",
+    "body": [
+      "      - name: ${1:column_name}",
+      "        description: \"${2:Description.}\"",
+      "$0"
+    ],
+    "description": "Column with description"
+  },
+  "dbt: test accepted_values": {
+    "scope": "yaml,jinja-yaml",
+    "prefix": "dyaccepted",
+    "body": [
+      "        data_tests:",
+      "          - accepted_values:",
+      "              values: ['${1:a}', '${2:b}']",
+      "$0"
+    ],
+    "description": "Test accepted_values"
+  },
+  "dbt: test relationships": {
+    "scope": "yaml,jinja-yaml",
+    "prefix": "dyrel",
+    "body": [
+      "        data_tests:",
+      "          - relationships:",
+      "              to: ref('${1:other_model}')",
+      "              field: ${2:id}",
+      "$0"
+    ],
+    "description": "Referential integrity test"
+  },
+  "dbt: source": {
+    "scope": "yaml,jinja-yaml",
+    "prefix": "dysource",
+    "body": [
+      "sources:",
+      "  - name: ${1:source_name}",
+      "    database: ${2:DATABASE}",
+      "    schema: ${3:schema}",
+      "    tables:",
+      "      - name: ${4:table_name}",
+      "        description: \"${5:Description.}\"",
+      "$0"
+    ],
+    "description": "Source declaration"
+  }
+}

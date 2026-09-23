@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Terry Cornelusse
+# ~/.zshrc -> symlink to ~/.dotfiles/zsh/zshrc
+# Do not edit here: the modules live in ~/.dotfiles/zsh/*.zsh
+export DOTFILES="$HOME/.dotfiles"
+
+for _f in "$DOTFILES"/zsh/[0-9][0-9]-*.zsh; do
+  [ -r "$_f" ] && source "$_f"
+done
+unset _f
+
+# Machine-specific overrides, never versioned
+[ -r "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"

@@ -1,0 +1,14 @@
+{
+  // Recommendations to copy into <repo>/.vscode/extensions.json.
+  // What is actually installed is captured in worktree-station.code-profile.
+  "recommendations": [
+    "innoverio.vscode-dbt-power-user",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "samuelcolvin.jinjahtml",
+    "inferrinizzard.prettier-sql-vscode",
+    "mechatroner.rainbow-csv",
+    "eamodio.gitlens",
+    "anthropic.claude-code"
+  ]
+}

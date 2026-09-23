@@ -1,0 +1,94 @@
+// Worktree Station shortcuts — installed by ~/.dotfiles/install.sh. ctrl+alt prefix: free on macOS.
+[
+  {
+    "key": "ctrl+alt+b",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: build (current model)",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+d",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: build + downstream",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+u",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: build + upstream",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+t",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: test (current model)",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+s",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: preview rows",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+c",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: compile (current model)",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+m",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: parse (manifest / lineage)"
+  },
+  {
+    "key": "ctrl+alt+l",
+    "command": "workbench.action.tasks.runTask",
+    "args": "dbt: changed models"
+  },
+  {
+    "key": "ctrl+alt+f",
+    "command": "workbench.action.tasks.runTask",
+    "args": "sql: sqlfluff fix",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+k",
+    "command": "workbench.action.tasks.runTask",
+    "args": "lookml: parse",
+    "when": "editorIsOpen"
+  },
+  {
+    "key": "ctrl+alt+w",
+    "command": "workbench.action.tasks.runTask",
+    "args": "wts: worktree status"
+  },
+  {
+    "key": "ctrl+alt+x",
+    "command": "workbench.action.terminal.killAll"
+  },
+  {
+    "key": "cmd+shift+f12",
+    "command": "workbench.action.tasks.terminate"
+  },
+  {
+    "key": "ctrl+alt+e",
+    "command": "worktreeStation.dashboard"
+  },
+  {
+    "key": "ctrl+alt+shift+e",
+    "command": "workbench.view.extension.worktree-station"
+  },
+  {
+    "key": "ctrl+alt+n",
+    "command": "worktreeStation.newSession"
+  },
+  {
+    "key": "ctrl+alt+a",
+    "command": "worktreeStation.buildChanged"
+  },
+  {
+    "key": "ctrl+alt+j",
+    "command": "worktreeStation.claudeHere"
+  }
+]

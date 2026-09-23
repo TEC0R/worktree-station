@@ -1,0 +1,78 @@
+{
+  "LookML: view": {
+    "scope": "lookml,plaintext",
+    "prefix": "lview",
+    "body": [
+      "view: ${1:view_name} {",
+      "  sql_table_name: ${2:SCHEMA.TABLE} ;;",
+      "",
+      "  dimension: ${3:id} {",
+      "    primary_key: yes",
+      "    type: string",
+      "    sql: \\${TABLE}.${3:id} ;;",
+      "  }",
+      "",
+      "  $0",
+      "}"
+    ],
+    "description": "LookML view with primary key"
+  },
+  "LookML: dimension": {
+    "scope": "lookml,plaintext",
+    "prefix": "ldim",
+    "body": [
+      "dimension: ${1:name} {",
+      "  label: \"${2:Label}\"",
+      "  description: \"${3:Description.}\"",
+      "  type: ${4|string,number,yesno,tier,location|}",
+      "  sql: \\${TABLE}.${1:name} ;;",
+      "}",
+      "$0"
+    ],
+    "description": "Dimension"
+  },
+  "LookML: dimension_group": {
+    "scope": "lookml,plaintext",
+    "prefix": "ldimg",
+    "body": [
+      "dimension_group: ${1:created} {",
+      "  type: time",
+      "  timeframes: [raw, time, date, week, month, quarter, year]",
+      "  sql: \\${TABLE}.${1:created}_at ;;",
+      "}",
+      "$0"
+    ],
+    "description": "Time dimension group"
+  },
+  "LookML: measure": {
+    "scope": "lookml,plaintext",
+    "prefix": "lmeas",
+    "body": [
+      "measure: ${1:name} {",
+      "  label: \"${2:Label}\"",
+      "  description: \"${3:Description.}\"",
+      "  type: ${4|count,sum,average,count_distinct,number|}",
+      "  sql: \\${${5:field}} ;;",
+      "}",
+      "$0"
+    ],
+    "description": "Measure"
+  },
+  "LookML: explore + join": {
+    "scope": "lookml,plaintext",
+    "prefix": "lexplore",
+    "body": [
+      "explore: ${1:explore_name} {",
+      "  label: \"${2:Label}\"",
+      "",
+      "  join: ${3:joined_view} {",
+      "    type: left_outer",
+      "    relationship: ${4|many_to_one,one_to_many,one_to_one,many_to_many|}",
+      "    sql_on: \\${${1:explore_name}.${5:id}} = \\${${3:joined_view}.${5:id}} ;;",
+      "  }",
+      "  $0",
+      "}"
+    ],
+    "description": "Explore with one join"
+  }
+}

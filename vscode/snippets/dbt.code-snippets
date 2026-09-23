@@ -1,0 +1,114 @@
+{
+  "dbt: config incremental": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dconf-inc",
+    "body": [
+      "{{",
+      "    config(",
+      "        materialized='incremental',",
+      "        unique_key='${1:id}',",
+      "        incremental_strategy='${2|merge,delete+insert,append|}',",
+      "        on_schema_change='${3|append_new_columns,sync_all_columns,fail,ignore|}',",
+      "        cluster_by=['${4:updated_at}']",
+      "    )",
+      "}}",
+      "",
+      "$0"
+    ],
+    "description": "Config block for an incremental model"
+  },
+  "dbt: config table": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dconf",
+    "body": [
+      "{{ config(materialized='${1|table,view,ephemeral|}'${2:, tags=['${3:daily}']}) }}",
+      "",
+      "$0"
+    ],
+    "description": "Simple config block"
+  },
+  "dbt: model skeleton (CTE)": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dmodel",
+    "body": [
+      "with source as (",
+      "    select * from {{ ref('${1:stg_model}') }}",
+      "),",
+      "",
+      "renamed as (",
+      "    select",
+      "        ${2:id},",
+      "        $0",
+      "    from source",
+      ")",
+      "",
+      "select * from renamed"
+    ],
+    "description": "dbt model as CTEs, source -> renamed -> final style"
+  },
+  "dbt: is_incremental block": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dinc",
+    "body": [
+      "{% if is_incremental() %}",
+      "    where ${1:updated_at} > (select coalesce(max(${1:updated_at}), '1900-01-01') from {{ this }})",
+      "{% endif %}",
+      "$0"
+    ],
+    "description": "Incremental filter on {{ this }}"
+  },
+  "dbt: ref": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dref",
+    "body": ["{{ ref('${1:model}') }}$0"],
+    "description": "ref()"
+  },
+  "dbt: source": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dsrc",
+    "body": ["{{ source('${1:schema}', '${2:table}') }}$0"],
+    "description": "source()"
+  },
+  "dbt: snapshot": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dsnap",
+    "body": [
+      "{% snapshot ${1:snap_name} %}",
+      "{{",
+      "    config(",
+      "        target_schema='snapshots',",
+      "        unique_key='${2:id}',",
+      "        strategy='${3|timestamp,check|}',",
+      "        updated_at='${4:updated_at}'",
+      "    )",
+      "}}",
+      "",
+      "select * from {{ source('${5:schema}', '${6:table}') }}",
+      "",
+      "{% endsnapshot %}"
+    ],
+    "description": "dbt snapshot"
+  },
+  "dbt: macro": {
+    "scope": "jinja-sql,sql",
+    "prefix": "dmacro",
+    "body": [
+      "{% macro ${1:macro_name}(${2:arg}) %}",
+      "    $0",
+      "{% endmacro %}"
+    ],
+    "description": "Jinja macro"
+  },
+  "sql: CTE": {
+    "scope": "jinja-sql,sql",
+    "prefix": "cte",
+    "body": [
+      "${1:name} as (",
+      "    select",
+      "        $0",
+      "    from ${2:table}",
+      "),"
+    ],
+    "description": "Named CTE"
+  }
+}

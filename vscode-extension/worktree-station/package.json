@@ -1,0 +1,624 @@
+{
+  "name": "worktree-station",
+  "displayName": "Worktree Station",
+  "description": "One station per session: a worktree per repo, a session kanban and Claude Code in a single VS Code window.",
+  "version": "1.0.0",
+  "publisher": "tec0r",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "author": {
+    "name": "Terry Cornelusse",
+    "url": "https://github.com/TEC0R"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TEC0R/worktree-station.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TEC0R/worktree-station/issues"
+  },
+  "homepage": "https://github.com/TEC0R/worktree-station#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "worktree-station",
+          "title": "Worktree Station",
+          "icon": "media/station.svg"
+        }
+      ]
+    },
+    "views": {
+      "worktree-station": [
+        {
+          "id": "worktreeStationSessions",
+          "name": "Sessions",
+          "icon": "media/station.svg"
+        },
+        {
+          "id": "worktreeStationModels",
+          "name": "Changed models",
+          "icon": "media/station.svg"
+        },
+        {
+          "id": "worktreeStationRepos",
+          "name": "Repos",
+          "icon": "media/station.svg"
+        },
+        {
+          "id": "worktreeStationRuns",
+          "name": "Recent runs",
+          "icon": "media/station.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "worktreeStationSessions",
+        "contents": "No work sessions yet.\n\nA session creates one worktree per configured repo and opens them together.\n[New session](command:worktreeStation.newSession)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "worktreeStation.newSession",
+        "title": "New session",
+        "category": "Worktree Station",
+        "icon": "$(add)"
+      },
+      {
+        "command": "worktreeStation.refresh",
+        "title": "Refresh",
+        "category": "Worktree Station",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "worktreeStation.session.load",
+        "title": "Load in this window",
+        "category": "Worktree Station",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "worktreeStation.session.unload",
+        "title": "Remove from this window",
+        "category": "Worktree Station",
+        "icon": "$(close)"
+      },
+      {
+        "command": "worktreeStation.session.openWindow",
+        "title": "Open in a dedicated window (Claude panel)",
+        "category": "Worktree Station",
+        "icon": "$(multiple-windows)"
+      },
+      {
+        "command": "worktreeStation.session.delete",
+        "title": "Delete session",
+        "category": "Worktree Station",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "worktreeStation.session.cleanAll",
+        "title": "Clean up unused sessions",
+        "category": "Worktree Station",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "worktreeStation.worktree.terminal",
+        "title": "Terminal here",
+        "category": "Worktree Station",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "worktreeStation.worktree.reveal",
+        "title": "Reveal in Finder",
+        "category": "Worktree Station",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "worktreeStation.worktree.pr",
+        "title": "Open / create PR",
+        "category": "Worktree Station",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "worktreeStation.worktree.dbtParse",
+        "title": "dbt parse (manifest)",
+        "category": "Worktree Station",
+        "icon": "$(symbol-structure)"
+      },
+      {
+        "command": "worktreeStation.repo.syncAll",
+        "title": "Sync all repos",
+        "category": "Worktree Station",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "worktreeStation.repo.add",
+        "title": "Add repo",
+        "category": "Worktree Station",
+        "icon": "$(add)"
+      },
+      {
+        "command": "worktreeStation.repo.remove",
+        "title": "Remove repo from sessions",
+        "category": "Worktree Station",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "worktreeStation.repo.editBase",
+        "title": "Change default branch",
+        "category": "Worktree Station",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "worktreeStation.model.build",
+        "title": "dbt build",
+        "category": "Worktree Station",
+        "icon": "$(play)"
+      },
+      {
+        "command": "worktreeStation.model.buildDown",
+        "title": "dbt build + downstream",
+        "category": "Worktree Station",
+        "icon": "$(fold-down)"
+      },
+      {
+        "command": "worktreeStation.model.buildUp",
+        "title": "dbt build + upstream",
+        "category": "Worktree Station",
+        "icon": "$(fold-up)"
+      },
+      {
+        "command": "worktreeStation.model.test",
+        "title": "dbt test",
+        "category": "Worktree Station",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "worktreeStation.model.show",
+        "title": "dbt show (preview)",
+        "category": "Worktree Station",
+        "icon": "$(table)"
+      },
+      {
+        "command": "worktreeStation.model.compile",
+        "title": "dbt compile",
+        "category": "Worktree Station",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "worktreeStation.model.open",
+        "title": "Open model",
+        "category": "Worktree Station"
+      },
+      {
+        "command": "worktreeStation.model.fmt",
+        "title": "sqlfluff fix",
+        "category": "Worktree Station",
+        "icon": "$(symbol-color)"
+      },
+      {
+        "command": "worktreeStation.buildChanged",
+        "title": "dbt build: all changed models",
+        "category": "Worktree Station",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "worktreeStation.links.looker",
+        "title": "Open Looker",
+        "category": "Worktree Station",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "worktreeStation.links.notion",
+        "title": "Open Notion",
+        "category": "Worktree Station",
+        "icon": "$(book)"
+      },
+      {
+        "command": "worktreeStation.links.github",
+        "title": "Open GitHub",
+        "category": "Worktree Station",
+        "icon": "$(github)"
+      },
+      {
+        "command": "worktreeStation.doctor",
+        "title": "Diagnostics (wts doctor)",
+        "category": "Worktree Station",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "worktreeStation.runs.clear",
+        "title": "Clear history",
+        "category": "Worktree Station",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "worktreeStation.session.claude",
+        "title": "Claude Code on this session",
+        "category": "Worktree Station",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "worktreeStation.session.claudeClose",
+        "title": "Close Claude Code",
+        "category": "Worktree Station",
+        "icon": "$(sparkle-filled)"
+      },
+      {
+        "command": "worktreeStation.worktree.claude",
+        "title": "Claude Code on this worktree",
+        "category": "Worktree Station",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "worktreeStation.claudeHere",
+        "title": "Claude Code on the current session",
+        "category": "Worktree Station",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "worktreeStation.session.claudePanel",
+        "title": "Claude Code (panel, dedicated window)",
+        "category": "Worktree Station",
+        "icon": "$(window)"
+      },
+      {
+        "command": "worktreeStation.dashboard",
+        "title": "Open dashboard",
+        "category": "Worktree Station",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "worktreeStation.dashboardBeside",
+        "title": "Dashboard (to the side)",
+        "category": "Worktree Station"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "worktreeStation.dashboard",
+          "when": "view == worktreeStationSessions",
+          "group": "navigation@0"
+        },
+        {
+          "command": "worktreeStation.newSession",
+          "when": "view == worktreeStationSessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "worktreeStation.session.cleanAll",
+          "when": "view == worktreeStationSessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "worktreeStation.refresh",
+          "when": "view == worktreeStationSessions",
+          "group": "navigation@3"
+        },
+        {
+          "command": "worktreeStation.buildChanged",
+          "when": "view == worktreeStationModels",
+          "group": "navigation@1"
+        },
+        {
+          "command": "worktreeStation.refresh",
+          "when": "view == worktreeStationModels",
+          "group": "navigation@2"
+        },
+        {
+          "command": "worktreeStation.repo.syncAll",
+          "when": "view == worktreeStationRepos",
+          "group": "navigation@1"
+        },
+        {
+          "command": "worktreeStation.repo.add",
+          "when": "view == worktreeStationRepos",
+          "group": "navigation@2"
+        },
+        {
+          "command": "worktreeStation.doctor",
+          "when": "view == worktreeStationRepos",
+          "group": "navigation@3"
+        },
+        {
+          "command": "worktreeStation.refresh",
+          "when": "view == worktreeStationRepos",
+          "group": "navigation@4"
+        },
+        {
+          "command": "worktreeStation.runs.clear",
+          "when": "view == worktreeStationRuns",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "worktreeStation.session.claude",
+          "when": "view == worktreeStationSessions && viewItem =~ /^session/ && viewItem =~ /noclaude/",
+          "group": "inline@0"
+        },
+        {
+          "command": "worktreeStation.session.claudeClose",
+          "when": "view == worktreeStationSessions && viewItem =~ /^session/ && viewItem =~ /:claude$/",
+          "group": "inline@0"
+        },
+        {
+          "command": "worktreeStation.session.load",
+          "when": "view == worktreeStationSessions && viewItem =~ /^session/ && viewItem =~ /unloaded/",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktreeStation.session.unload",
+          "when": "view == worktreeStationSessions && viewItem =~ /^session/ && viewItem =~ /loaded/",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktreeStation.session.openWindow",
+          "when": "view == worktreeStationSessions && viewItem =~ /^session/",
+          "group": "inline@2"
+        },
+        {
+          "command": "worktreeStation.session.delete",
+          "when": "view == worktreeStationSessions && viewItem =~ /^session/",
+          "group": "inline@3"
+        },
+        {
+          "command": "worktreeStation.worktree.pr",
+          "when": "view == worktreeStationSessions && viewItem =~ /^worktree/",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktreeStation.worktree.terminal",
+          "when": "view == worktreeStationSessions && viewItem =~ /^worktree/",
+          "group": "inline@2"
+        },
+        {
+          "command": "worktreeStation.worktree.dbtParse",
+          "when": "view == worktreeStationSessions && viewItem =~ /^worktree/ && viewItem =~ /dbt/",
+          "group": "inline@3"
+        },
+        {
+          "command": "worktreeStation.worktree.reveal",
+          "when": "view == worktreeStationSessions && viewItem =~ /^worktree/",
+          "group": "ctx@1"
+        },
+        {
+          "command": "worktreeStation.model.build",
+          "when": "view == worktreeStationModels && viewItem == model",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktreeStation.model.buildDown",
+          "when": "view == worktreeStationModels && viewItem == model",
+          "group": "inline@2"
+        },
+        {
+          "command": "worktreeStation.model.test",
+          "when": "view == worktreeStationModels && viewItem == model",
+          "group": "inline@3"
+        },
+        {
+          "command": "worktreeStation.model.buildUp",
+          "when": "view == worktreeStationModels && viewItem == model",
+          "group": "ctx@1"
+        },
+        {
+          "command": "worktreeStation.model.show",
+          "when": "view == worktreeStationModels && viewItem == model",
+          "group": "ctx@2"
+        },
+        {
+          "command": "worktreeStation.model.compile",
+          "when": "view == worktreeStationModels && viewItem == model",
+          "group": "ctx@3"
+        },
+        {
+          "command": "worktreeStation.model.fmt",
+          "when": "view == worktreeStationModels && viewItem == model",
+          "group": "ctx@4"
+        },
+        {
+          "command": "worktreeStation.repo.editBase",
+          "when": "view == worktreeStationRepos && viewItem == repo",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktreeStation.worktree.terminal",
+          "when": "view == worktreeStationRepos && viewItem == repo",
+          "group": "inline@2"
+        },
+        {
+          "command": "worktreeStation.repo.remove",
+          "when": "view == worktreeStationRepos && viewItem == repo",
+          "group": "inline@3"
+        },
+        {
+          "command": "worktreeStation.worktree.claude",
+          "when": "view == worktreeStationSessions && viewItem =~ /^worktree/",
+          "group": "ctx@2"
+        },
+        {
+          "command": "worktreeStation.session.claudePanel",
+          "when": "view == worktreeStationSessions && viewItem =~ /^session/",
+          "group": "ctx@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "worktreeStation.session.load",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.session.unload",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.session.openWindow",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.session.delete",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.worktree.terminal",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.worktree.reveal",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.worktree.pr",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.worktree.dbtParse",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.model.open",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.session.claude",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.session.claudeClose",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.worktree.claude",
+          "when": "false"
+        },
+        {
+          "command": "worktreeStation.session.claudePanel",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Worktree Station",
+      "properties": {
+        "worktreeStation.wtsPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `wts` CLI. Empty means `~/.dotfiles/bin/wts`."
+        },
+        "worktreeStation.lookerUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Looker instance URL opened by the **Open Looker** command."
+        },
+        "worktreeStation.notionUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Notion URL opened by the **Open Notion** command."
+        },
+        "worktreeStation.autoRefreshSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "markdownDescription": "How often the views refresh themselves, in seconds. 0 turns it off."
+        },
+        "worktreeStation.confirmDelete": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask for confirmation before deleting a session."
+        },
+        "worktreeStation.claudePath": {
+          "type": "string",
+          "default": "claude",
+          "markdownDescription": "Claude Code executable launched in a session terminal."
+        },
+        "worktreeStation.claudeArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Arguments appended to every Claude Code launch (e.g. `--model`)."
+        },
+        "worktreeStation.claudeMode": {
+          "type": "string",
+          "enum": [
+            "terminal",
+            "window"
+          ],
+          "enumDescriptions": [
+            "One terminal per session, in this window.",
+            "Claude Code panel, in a window dedicated to the session."
+          ],
+          "default": "terminal",
+          "markdownDescription": "How Claude Code opens on a session — the ✦ button, the main button of each dashboard card, and the notification after **New session**.\n\nThe Claude Code **panel** is rooted at `workspaceFolders[0]`, so it only points at the right session when that session is alone in its window — hence `window`, which opens a dedicated window. `terminal` keeps everything in one window: one terminal per session, cwd set to its dbt worktree, the other folders passed as `--add-dir`."
+        },
+        "worktreeStation.closeWindowOnDelete": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Close the VS Code windows opened on a session when it is deleted. Unsaved editors still prompt as usual."
+        },
+        "worktreeStation.attachOnCreate": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Add a new session's folders to the current window as soon as it is created. When off, the session is created and the notification offers **Load here**, plus **Claude terminal** or **New window** depending on `worktreeStation.claudeMode`."
+        },
+        "worktreeStation.dashboardOnStartup": {
+          "type": "string",
+          "enum": [
+            "never",
+            "known",
+            "always"
+          ],
+          "default": "known",
+          "enumDescriptions": [
+            "Never open the dashboard by itself.",
+            "Only when the window contains a known worktree or repo.",
+            "In every VS Code window, whatever it holds."
+          ],
+          "markdownDescription": "When to open the dashboard as an editor tab on startup."
+        },
+        "worktreeStation.parseOnCreate": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run `dbt parse` in the background after creating a session. When off, the manifest is only built on demand (`dbt parse`, ⌃⌥M) — until then dbt Power User has no lineage and no autocompletion."
+        }
+      }
+    },
+    "taskDefinitions": [
+      {
+        "type": "worktreeStation",
+        "required": [],
+        "properties": {
+          "cwd": {
+            "type": "string",
+            "description": "Directory `wts` is launched from."
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository -o worktree-station.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}

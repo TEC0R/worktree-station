@@ -1,0 +1,102 @@
+{
+  // User-level (global) tasks — available in EVERY worktree without copying
+  // anything into the repos. Each task delegates to the `wts` CLI, which finds
+  // the repo root from the current file.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dbt: build (current model)",
+      "type": "shell",
+      "command": "wts dbt build ${fileBasenameNoExtension}",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": false }
+    },
+    {
+      "label": "dbt: build + downstream",
+      "type": "shell",
+      "command": "wts dbt down ${fileBasenameNoExtension}",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": false }
+    },
+    {
+      "label": "dbt: build + upstream",
+      "type": "shell",
+      "command": "wts dbt up ${fileBasenameNoExtension}",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": false }
+    },
+    {
+      "label": "dbt: test (current model)",
+      "type": "shell",
+      "command": "wts dbt test ${fileBasenameNoExtension}",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": false }
+    },
+    {
+      "label": "dbt: preview rows",
+      "type": "shell",
+      "command": "wts dbt show ${fileBasenameNoExtension} 20",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true }
+    },
+    {
+      "label": "dbt: compile (current model)",
+      "type": "shell",
+      "command": "wts dbt compile ${fileBasenameNoExtension}",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": false }
+    },
+    {
+      "label": "dbt: parse (manifest / lineage)",
+      "type": "shell",
+      "command": "wts dbt parse",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "dbt: changed models",
+      "type": "shell",
+      "command": "wts dbt ls",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true }
+    },
+    {
+      "label": "sql: sqlfluff fix",
+      "type": "shell",
+      "command": "wts fmt ${file}",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "lookml: parse",
+      "type": "shell",
+      "command": "wts lkml ${file}",
+      "options": { "cwd": "${fileDirname}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true }
+    },
+    {
+      "label": "wts: doctor",
+      "type": "shell",
+      "command": "wts doctor",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true }
+    },
+    {
+      "label": "wts: worktree status",
+      "type": "shell",
+      "command": "wts wt list",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true, "focus": true }
+    }
+  ]
+}

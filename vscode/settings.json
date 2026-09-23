@@ -1,0 +1,78 @@
+{
+  "Prettier-SQL.SQLFlavourOverride": "snowflake",
+  "[jinja-sql]": {
+    "editor.tabSize": 4,
+    "editor.wordWrap": "on"
+  },
+  "[jinja-yaml]": {
+    "editor.tabSize": 2
+  },
+  "[lookml]": {
+    "editor.tabSize": 2
+  },
+  "[yaml]": {
+    "editor.tabSize": 2
+  },
+  "chat.mcp.gallery.enabled": true,
+  "chat.viewSessions.orientation": "stacked",
+  "claudeCode.hideOnboarding": true,
+  "claudeCode.preferredLocation": "panel",
+  "editor.linkedEditing": true,
+  "editor.renderWhitespace": "trailing",
+  "editor.rulers": [
+    100
+  ],
+  "editor.stickyScroll.enabled": true,
+  "explorer.compactFolders": false,
+  "files.associations": {
+    "*.sql": "jinja-sql",
+    "*.yml": "jinja-yaml"
+  },
+  "files.autoSave": "onFocusChange",
+  "files.exclude": {
+    "**/.DS_Store": true,
+    "**/.ruff_cache": true,
+    "**/.pytest_cache": true
+  },
+  "files.watcherExclude": {
+    "**/target/**": true,
+    "**/dbt_packages/**": true,
+    "**/logs/**": true,
+    "**/.ruff_cache/**": true,
+    "**/.pytest_cache/**": true,
+    "**/*venv/**": true
+  },
+  "git.autofetch": true,
+  "git.blame.editorDecoration.enabled": true,
+  "git.branchProtection": [
+    "staging",
+    "master",
+    "main"
+  ],
+  "git.confirmSync": false,
+  "git.pruneOnFetch": true,
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "gitlens.currentLine.enabled": false,
+  "search.exclude": {
+    "**/target/**": true,
+    "**/dbt_packages/**": true,
+    "**/logs/**": true,
+    "**/*venv/**": true,
+    "**/tmp/**": true
+  },
+  "worktreeStation.dashboardOnStartup": "always",
+  "task.allowAutomaticTasks": "on",
+  "task.quickOpen.history": 12,
+  "terminal.integrated.enablePersistentSessions": false,
+  "terminal.integrated.scrollback": 20000,
+  "window.confirmSaveUntitledWorkspace": false,
+  "window.restoreWindows": "none",
+  "window.title": "${rootName}${separator}${activeEditorShort}${separator}${dirty}",
+  "workbench.editor.empty.hint": "hidden",
+  "workbench.editor.highlightModifiedTabs": true,
+  "workbench.editor.labelFormat": "medium",
+  "workbench.secondarySideBar.defaultVisibility": "hidden",
+  "workbench.startupEditor": "none",
+  "workbench.welcomePage.walkthroughs.openOnInstall": false,
+  "worktreeStation.claudeMode": "window"
+}
