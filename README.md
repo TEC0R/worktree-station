@@ -40,7 +40,7 @@ wts repo add https://github.com/you/your-repo   # declare your first repo
 | …/`keybindings.json` | `vscode/keybindings.json` |
 | …/`tasks.json` | `vscode/tasks.json` (**user** tasks, valid in any worktree) |
 | …/`snippets/*.code-snippets` | `vscode/snippets/` |
-| `~/.claude/settings.json` | `PostToolUse` hook merged in, never replaced |
+| `~/.claude/settings.json` | `PostToolUse` hook and `"outputStyle": "Concise"` merged in, never replaced (a style already chosen in `/config` is kept) |
 | `~/.config/wts/secrets.env` | created empty, `chmod 600` |
 | `Worktree Station` VS Code extension | `vscode-extension/worktree-station/`, built then installed |
 
