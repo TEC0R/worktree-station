@@ -16,6 +16,7 @@
   "chat.mcp.gallery.enabled": true,
   "chat.viewSessions.orientation": "stacked",
   "claudeCode.hideOnboarding": true,
+  "claudeCode.lockEditorGroups": false,
   "claudeCode.preferredLocation": "panel",
   "editor.linkedEditing": true,
   "editor.renderWhitespace": "trailing",
