@@ -1,3 +1,5 @@
+<img width="1281" height="832" alt="image" src="https://github.com/user-attachments/assets/10a15392-b38a-4c76-89ec-433ab17f15e7" />
+
 # Worktree Station
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
