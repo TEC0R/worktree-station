@@ -1,13 +1,13 @@
-<img width="1281" height="832" alt="image" src="https://github.com/user-attachments/assets/10a15392-b38a-4c76-89ec-433ab17f15e7" />
-
 # Worktree Station
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 A development environment built for working alongside Claude Code: one command
-(or one click) gives you an isolated **session** — a git worktree per repo,
+(or one click) gives you an isolated **session** a git worktree per repo,
 opened together in VS Code, with its own Claude Code rooted in it. Run several
 sessions in parallel, track them on a kanban, throw them away when done.
+
+<img width="1281" height="832" alt="image" src="https://github.com/user-attachments/assets/10a15392-b38a-4c76-89ec-433ab17f15e7" />
 
 It is made of three pieces, all in this repo:
 
