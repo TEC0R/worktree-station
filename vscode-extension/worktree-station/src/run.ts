@@ -245,11 +245,11 @@ export async function terminal(name: string, cwd: string, mainDir?: string, conf
   const envs = pythonEnvs(cwd, mainDir, configured);
   let env: PyEnv | undefined;
   if (envs.length > 0) {
-    const none = { label: "$(terminal) No environment", description: "plain shell", env: undefined };
-    const picked = await vscode.window.showQuickPick(
+    const picked = await vscode.window.showQuickPick<vscode.QuickPickItem & { env?: PyEnv }>(
       [
         ...envs.map((e) => ({ label: `$(symbol-namespace) ${e.label}`, description: e.dir, env: e })),
-        none,
+        { label: "", kind: vscode.QuickPickItemKind.Separator },
+        { label: "$(terminal) No environment", description: "plain shell, nothing activated" },
       ],
       { title: `Terminal · ${name}`, placeHolder: "Which environment to activate?" },
     );

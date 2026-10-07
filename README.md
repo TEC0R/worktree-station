@@ -163,9 +163,10 @@ written only outside `~/<name>`. Two repos cannot share the same folder name.
 - *Terminal* (card or sidebar) then asks which Python environment to activate
   when one exists: a `.venv` / `venv` / `env` / `*_venv` folder of the worktree
   or of the repo's main checkout (an untracked venv is not copied into a
-  worktree), the worktree's pipenv virtualenv, or `WTS_VENV`. *No environment*
-  opens a plain shell, and with no environment found the terminal opens
-  directly. Each environment gets its own terminal, `<worktree> · <env>`.
+  worktree), the worktree's pipenv virtualenv, or `WTS_VENV`. *No environment*,
+  last and set apart, opens a plain shell with nothing activated; with no
+  environment found the terminal opens directly. Each environment gets its own
+  terminal, `<worktree> · <env>`.
 - It opens at startup according to `worktreeStation.dashboardOnStartup`:
   `never`, `known` (default — only when the window contains a worktree or a
   declared repo) or `always`.
