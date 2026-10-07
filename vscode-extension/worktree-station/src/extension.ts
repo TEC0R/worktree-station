@@ -596,10 +596,11 @@ export function activate(context: vscode.ExtensionContext): void {
       await task("wts wt clean", ["wt", "clean"], conf.root);
     }),
 
-    reg("worktreeStation.worktree.terminal", (n: unknown) => {
+    reg("worktreeStation.worktree.terminal", async (n: unknown) => {
       const wt = worktreeOf(n);
       if (wt) {
-        terminal(wt.name, wt.path);
+        const conf = await api.config().catch(() => undefined);
+        await terminal(wt.name, wt.path, wt.mainDir, conf?.venv ?? "");
       }
     }),
     reg("worktreeStation.worktree.reveal", async (n: unknown) => {
