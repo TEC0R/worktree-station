@@ -137,7 +137,7 @@
       },
       {
         "command": "worktreeStation.repo.syncAll",
-        "title": "Sync all repos",
+        "title": "Sync all repos and sessions",
         "category": "Worktree Station",
         "icon": "$(sync)"
       },

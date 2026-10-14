@@ -130,8 +130,15 @@ commits, or a file touched in the last 8 hours (unless `--force`).
 - **clone already in `~`**: list of the clones not declared yet.
 
 Then **Branch** / **Remove** on each row, and a single **Sync repos** at the top
-(`pull --ff-only` + deletion of merged branches, for every repo). From the
-terminal:
+(`pull --ff-only` + deletion of merged branches, for every repo, then the
+rebase of every session's worktrees onto `origin/<base>`). A worktree with
+uncommitted changes is skipped; a conflict aborts its rebase and leaves it
+untouched. A branch already on GitHub is then pushed (`--force-with-lease`) so
+its PR is up to date too — unless GitHub holds commits missing locally (a
+colleague's push, GitHub's *Update branch*), in which case it is left alone. The
+base branch (`staging`, `master`…) is never rebased nor pushed: a `wt-<base>-*`
+branch that still tracks `origin/<base>` stays local.
+From the terminal:
 
 ```sh
 wts repo                                                 # list
@@ -141,6 +148,7 @@ wts repo add my-repo                                     # = ~/my-repo
 wts repo base my-repo develop                            # default branch
 wts repo rm my-repo                                      # remove, nothing deleted from disk
 wts sync [repo]                                          # sync one or every repo
+wts sync --sessions                                      # every repo, then every session
 ```
 
 The branch is detected from `origin/HEAD` when omitted. `~/.config/wts/repos`

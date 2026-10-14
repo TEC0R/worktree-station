@@ -105,14 +105,21 @@ wts_sync_one() {
 }
 
 cmd_sync() {
-  local force="" target=""
-  for a in "$@"; do [[ "$a" == "--force" ]] && force="--force" || target="$a"; done
+  local force="" target="" sessions=""
+  for a in "$@"; do
+    case "$a" in
+      --force)    force="--force" ;;
+      --sessions) sessions=1 ;;
+      *)          target="$a" ;;
+    esac
+  done
   if [[ -n "$target" ]]; then
     local e; e="$(wts_entry_for "$target")" || { err "unknown repo: $target"; return 1; }
     wts_sync_one "$e" "$force"
   else
     local e; for e in $WTS_REPOS; do wts_sync_one "$e" "$force"; done
   fi
+  [[ -z "$sessions" ]] || wts_sessions_sync
 }
 
 # ── repo ──────────────────────────────────────────────────────────────────────
@@ -315,6 +322,69 @@ wts_wt_ws() {
   local ws="$WTS_WORKTREE_DIR/session-${id}.code-workspace"
   wts_write_workspace "$ws" $folders
   print -r -- "WORKSPACE=$ws"
+}
+
+# Pushes a rebased branch so its PR matches origin/<base> too. Only when the
+# branch is already on GitHub, and only if every commit there is also local
+# (possibly rewritten by the rebase): anything else would be lost, so it is kept.
+# Never the base branch: a wt-<base>-<ts> branch tracks origin/<base>, and only
+# a branch whose GitHub copy has the same name is pushed, to that exact ref.
+wts_push_rebased() {
+  local wt="$1" br="$2" main="$3" up
+  [[ -n "$br" && "$br" != "$main" ]] || return 0
+  up="$(git -C "$wt" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)"
+  [[ "$up" == "origin/$br" ]] || return 0
+  [[ "$(git -C "$wt" rev-parse HEAD)" == "$(git -C "$wt" rev-parse "origin/$br")" ]] && return 0
+  if git -C "$wt" cherry HEAD "origin/$br" 2>/dev/null | grep -q '^+'; then
+    warn "GitHub branch has commits missing locally — not pushed"
+    return 1
+  fi
+  if git -C "$wt" push --force-with-lease="refs/heads/$br:origin/$br" origin "HEAD:refs/heads/$br" >/dev/null 2>&1; then
+    ok "pushed to GitHub (PR up to date)"
+  else
+    err "push failed"; return 1
+  fi
+}
+
+# Rebases the worktrees of every session onto origin/<base> of their repo, then
+# pushes the branches already on GitHub.
+# A dirty worktree is skipped; a conflict aborts the rebase and leaves it as it was.
+wts_sessions_sync() {
+  local pat="*-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]"
+  local e repo name main wt br behind found=0 rc=0
+  for e in $WTS_REPOS; do
+    repo="$(wts_repo_dir "$e")"; name="$(wts_repo_name "$e")"; main="$(wts_repo_branch "$e")"
+    [[ -d "$repo/.git" ]] || continue
+    while IFS='|' read -r wt br; do
+      [[ -n "$wt" && -d "$wt" && "${wt:t}" == ${~pat} ]] || continue
+      [[ -n "$br" && "$br" != "$main" ]] || continue  # never rebase the base branch itself
+      found=1
+      head_ "${wt:t}  ${C_DIM}$br${C_RST}"
+      if [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
+        err "uncommitted changes — sync skipped"
+        git -C "$wt" status --short | head -10
+        rc=1; continue
+      fi
+      git -C "$wt" fetch --prune origin >/dev/null 2>&1 && ok "fetch" || { warn "fetch failed"; rc=1; continue; }
+      behind=$(git -C "$wt" rev-list --count "HEAD..origin/$main" 2>/dev/null)
+      if [[ "$behind" == 0 ]]; then
+        ok "already up to date with origin/$main"
+        wts_push_rebased "$wt" "$br" "$main" || rc=1
+      elif git -C "$wt" rebase "origin/$main" >/dev/null 2>&1; then
+        ok "rebased onto origin/$main ($behind new commit(s))"
+        wts_push_rebased "$wt" "$br" "$main" || rc=1
+      else
+        git -C "$wt" rebase --abort >/dev/null 2>&1
+        err "conflict rebasing onto origin/$main — aborted, worktree unchanged"
+        rc=1
+      fi
+    done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | awk '
+        /^worktree / { wt=$2 } /^branch / { br=substr($2, index($2,"heads/")+6) }
+        /^$/ { if (wt != "") print wt "|" br; wt=""; br="" }
+        END { if (wt != "") print wt "|" br }')
+  done
+  (( found )) || say "no session worktree to sync"
+  return $rc
 }
 
 cmd_wt() {
@@ -659,6 +729,8 @@ ${C_B}wts${C_RST} — Worktree Station environment
 ${C_B}Session${C_RST}
   wts up [--force]          update claude + sync the repos + worktree cleanup
   wts sync [repo] [--force] pull --ff-only + delete merged branches
+  wts sync --sessions       same, then rebase every session's worktrees onto origin/<base>
+                            and push the branches already on GitHub
   wts wt [br...]            create a session (one worktree per repo) and open VS Code
   wts wt --repo <name>[:<br>] session limited to these repos (repeatable)
   wts wt --no-open [...]    create the session without launching VS Code (FOLDER= output)

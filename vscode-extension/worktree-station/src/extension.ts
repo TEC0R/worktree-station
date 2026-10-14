@@ -635,7 +635,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     reg("worktreeStation.repo.syncAll", async () => {
       const conf = await api.config();
-      await task("wts sync", ["sync"], conf.root);
+      await task("wts sync", ["sync", "--sessions"], conf.root);
     }),
 
     reg("worktreeStation.model.build", (n: unknown) => dbtOn("build", "dbt build", n).catch(fail)),
