@@ -4,6 +4,8 @@
 # Installs the symlinks and the configuration. Idempotent: safe to re-run.
 #   ./install.sh            install
 #   ./install.sh --dry-run  show what would be done, touch nothing
+#   ./install.sh --claude-stable  also keep Claude Code (CLI + VS Code extension)
+#                                 on the stable channel at every login (opt-in)
 set -uo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,7 +14,13 @@ SECRETS="$HOME/.config/wts/secrets.env"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DRY=0
-[[ "${1:-}" == "--dry-run" ]] && DRY=1
+CLAUDE_STABLE=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY=1 ;;
+    --claude-stable) CLAUDE_STABLE=1 ;;
+  esac
+done
 
 ok()   { printf '\033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m~\033[0m %s\n' "$*"; }
@@ -80,6 +88,26 @@ if [[ -f "$CLAUDE_SETTINGS" ]]; then
   fi
 else
   err "$CLAUDE_SETTINGS not found — hook not installed"
+fi
+
+printf '\n\033[1m── Claude Code updates ───────────────────\033[0m\n'
+if (( ! CLAUDE_STABLE )); then
+  ok "skipped (opt-in: ./install.sh --claude-stable)"
+else
+  AGENT_LABEL="com.tec0r.claude-update"
+  AGENT_DST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+  AGENT_TMP="$(mktemp)"
+  sed "s|__HOME__|$HOME|g" "$DOTFILES/launchd/$AGENT_LABEL.plist" > "$AGENT_TMP"
+  if [[ -f "$AGENT_DST" ]] && cmp -s "$AGENT_TMP" "$AGENT_DST"; then
+    ok "${AGENT_DST/#$HOME/~} already up to date"
+  else
+    run "mkdir -p '$HOME/Library/LaunchAgents'"
+    run "cp '$AGENT_TMP' '$AGENT_DST'"
+    # Reload so launchd picks up the new definition (this also runs it once: RunAtLoad).
+    run "launchctl bootout 'gui/$(id -u)/$AGENT_LABEL' 2>/dev/null; launchctl bootstrap 'gui/$(id -u)' '$AGENT_DST'"
+    ok "$AGENT_LABEL installed (runs at login, log: ~/Library/Logs/claude-update.log)"
+  fi
+  rm -f "$AGENT_TMP"
 fi
 
 printf '\n\033[1m── Misc ──────────────────────────────────\033[0m\n'

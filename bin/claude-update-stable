@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Terry Cornelusse
+# Puts the Claude Code CLI and its VS Code extension on the same stable version.
+# The CLI follows Anthropic's stable channel; the extension is installed at the
+# exact version the CLI ended up on, which pins it (VS Code no longer bumps it
+# to latest). Run at login by the com.tec0r.claude-update LaunchAgent.
+#   claude-update-stable   update now
+set -uo pipefail
+
+CLAUDE="$HOME/.local/bin/claude"
+CODE="/usr/local/bin/code"
+EXT_ID="anthropic.claude-code"
+LOG="$HOME/Library/Logs/claude-update.log"
+
+log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
+notify() { osascript -e "display notification \"$1\" with title \"Claude Code\"" >/dev/null 2>&1 || true; }
+fail() { log "FAILED: $*"; notify "Update failed: $*"; exit 1; }
+cli_version() { "$CLAUDE" --version 2>/dev/null | awk '{print $1}'; }
+ext_version() { "$CODE" --list-extensions --show-versions 2>/dev/null | awk -F@ -v id="$EXT_ID" 'tolower($1) == id {print $2}'; }
+
+mkdir -p "$(dirname "$LOG")"
+[[ -x "$CLAUDE" ]] || fail "claude not found at $CLAUDE"
+[[ -x "$CODE" ]] || fail "code not found at $CODE"
+
+# At login the network is often not up yet: wait up to 5 minutes.
+for attempt in {1..10}; do
+  curl -sfI --max-time 5 https://registry.npmjs.org/ >/dev/null 2>&1 && break
+  (( attempt == 10 )) && fail "no network after 5 minutes"
+  sleep 30
+done
+
+cli_before="$(cli_version)"
+ext_before="$(ext_version)"
+
+out="$("$CLAUDE" install stable 2>&1)" || fail "claude install stable: $(tail -1 <<<"$out")"
+cli_after="$(cli_version)"
+[[ -n "$cli_after" ]] || fail "claude --version returned nothing after install"
+
+if [[ "$ext_before" != "$cli_after" ]]; then
+  out="$("$CODE" --install-extension "$EXT_ID@$cli_after" --force 2>&1)" \
+    || fail "extension $cli_after: $(tail -1 <<<"$out")"
+fi
+ext_after="$(ext_version)"
+[[ "$ext_after" == "$cli_after" ]] || fail "extension is $ext_after, CLI is $cli_after"
+
+if [[ "$cli_before" == "$cli_after" && "$ext_before" == "$ext_after" ]]; then
+  log "OK: already on stable $cli_after"
+else
+  log "OK: CLI $cli_before → $cli_after, extension $ext_before → $ext_after"
+  notify "Updated to stable $cli_after. Reload VS Code windows to use it."
+fi

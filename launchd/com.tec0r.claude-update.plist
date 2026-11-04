@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: install.sh replaces __HOME__ and copies it to ~/Library/LaunchAgents
+     (a copy, not a symlink: launchd does not reliably load symlinked agents at login). -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.tec0r.claude-update</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>__HOME__/.dotfiles/bin/claude-update-stable</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/claude-update.log</string>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/claude-update.log</string>
+</dict>
+</plist>
