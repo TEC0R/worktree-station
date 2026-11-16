@@ -9,7 +9,9 @@
 set -uo pipefail
 
 CLAUDE="$HOME/.local/bin/claude"
+# Intel Homebrew / VS Code's own shell command, then Apple Silicon Homebrew
 CODE="/usr/local/bin/code"
+[[ -x "$CODE" ]] || CODE="/opt/homebrew/bin/code"
 EXT_ID="anthropic.claude-code"
 LOG="$HOME/Library/Logs/claude-update.log"
 
