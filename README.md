@@ -41,6 +41,7 @@ wts repo add https://github.com/you/your-repo   # declare your first repo
 | …/`tasks.json` | `vscode/tasks.json` (**user** tasks, valid in any worktree) |
 | …/`snippets/*.code-snippets` | `vscode/snippets/` |
 | `~/.claude/settings.json` | `PostToolUse` hook and `"outputStyle": "Concise"` merged in, never replaced (a style already chosen in `/config` is kept) |
+| `~/.claude/scripts/replay_progress.py` | `claude/scripts/replay_progress.py`: progress bar of a headless data-agency replay (`python3 -I ~/.claude/scripts/replay_progress.py <stream.jsonl> --follow`) |
 | `~/.config/wts/secrets.env` | created empty, `chmod 600` |
 | `Worktree Station` VS Code extension | `vscode-extension/worktree-station/`, built then installed |
 | `~/Library/LaunchAgents/com.tec0r.claude-update.plist` | **opt-in** (`--claude-stable`): `launchd/com.tec0r.claude-update.plist`, **copied** (launchd does not reliably load symlinked agents at login) |

@@ -89,6 +89,8 @@ if [[ -f "$CLAUDE_SETTINGS" ]]; then
 else
   err "$CLAUDE_SETTINGS not found — hook not installed"
 fi
+# Progress bar of headless data-agency replays; the script never ships inside the plugin.
+link "$DOTFILES/claude/scripts/replay_progress.py" "$HOME/.claude/scripts/replay_progress.py"
 
 printf '\n\033[1m── Claude Code updates ───────────────────\033[0m\n'
 if (( ! CLAUDE_STABLE )); then
