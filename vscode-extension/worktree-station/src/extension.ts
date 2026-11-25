@@ -465,9 +465,11 @@ function migrateLegacyState(ctx: vscode.ExtensionContext): void {
  * and friends: lets a script or an agent outside VS Code run a session action that
  * only exists as an extension command (open the window, start or close Claude).
  */
+// No delete here: any web page can open a vscode:// link. Deletion is `wts rm`, shell only.
 const URI_ACTIONS: Record<string, string> = {
   "/claude": "worktreeStation.session.claude",
   "/claude-close": "worktreeStation.session.claudeClose",
+  "/claude-panel": "worktreeStation.session.claudePanel",
   "/open": "worktreeStation.session.openWindow",
 };
 

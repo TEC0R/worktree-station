@@ -11,6 +11,7 @@ Usage:
     wts-state.py card <session> <column>   move a session to a column
     wts-state.py name <session> [name]     name a session (no name: back to its timestamp)
     wts-state.py columns <id>=<label>...   replace the columns, in order
+    wts-state.py forget <session>          drop a deleted session's card and name
     wts-state.py inbox [--json] [--clear]  notifications written by the Claude Code hook
 """
 import json
@@ -82,6 +83,16 @@ def cmd_name(args: list[str]) -> int:
     return 0
 
 
+def cmd_forget(args: list[str]) -> int:
+    if len(args) != 1:
+        return fail("usage: forget <session>")
+    data = load()
+    data["board"].pop(args[0], None)
+    data["names"].pop(args[0], None)
+    save(data)
+    return 0
+
+
 def cmd_columns(args: list[str]) -> int:
     cols = []
     for a in args:
@@ -130,7 +141,7 @@ def main() -> int:
     if cmd == "show":
         print(json.dumps(load(), indent=2, ensure_ascii=False))
         return 0
-    handlers = {"card": cmd_card, "name": cmd_name, "columns": cmd_columns, "inbox": cmd_inbox}
+    handlers = {"card": cmd_card, "name": cmd_name, "columns": cmd_columns, "forget": cmd_forget, "inbox": cmd_inbox}
     if cmd not in handlers:
         return fail(f"unknown command {cmd!r}")
     return handlers[cmd](args)

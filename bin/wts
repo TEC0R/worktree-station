@@ -760,6 +760,8 @@ ${C_B}dbt${C_RST}  ${C_DIM}(from any worktree)${C_RST}
 ${C_B}Agents${C_RST}  ${C_DIM}(state in ~/.config/wts/state.json, shared with the extension)${C_RST}
   wts claude <session>      start Claude in the session (through the extension)
   wts claude-close <session> close the session's Claude
+  wts claude-panel <session> open the session alone in a window, Claude panel open
+  wts rm <session> [--force] delete the session: worktrees, windows, card (refuses unpushed work)
   wts open <session>        open the session's window
   wts state                 board state as JSON (columns, cards, names)
   wts card <session> <col>  move a session to a column
@@ -811,7 +813,8 @@ case "${1:-help}" in
   profile)  shift; cmd_profile "$@" ;;
   doctor)   shift; cmd_doctor "$@" ;;
   api)      shift; exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-api.py" "$@" ;;
-  claude|claude-close|open) cmd_session_uri "$@" ;;
+  claude|claude-close|claude-panel|open) cmd_session_uri "$@" ;;
+  rm)       shift; exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-rm.py" "$@" ;;
   state)    shift; exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-state.py" show "$@" ;;
   card|name|columns|inbox) exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-state.py" "$@" ;;
   help|-h|--help) cmd_help ;;

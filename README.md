@@ -7,12 +7,17 @@ A development environment built for working alongside Claude Code: one command
 opened together in VS Code, with its own Claude Code rooted in it. Run several
 sessions in parallel, track them on a kanban, throw them away when done.
 
-<img width="1281" height="832" alt="image" src="https://github.com/user-attachments/assets/10a15392-b38a-4c76-89ec-433ab17f15e7" />
+![Worktree Station dashboard: sessions on a kanban, repos, recent runs](docs/dashboard.png)
+
+_Fictional data; regenerate with `npm run screenshot` in `vscode-extension/worktree-station`._
 
 It is made of three pieces, all in this repo:
 
 - **`wts`**, a zsh CLI that creates and cleans sessions and manages the repo list;
 - **Worktree Station**, a VS Code extension that puts a dashboard on top of `wts`;
+- **agent control**: every session action is also a `wts` command, so a
+  supervising Claude Code session can drive the others (see
+  [Driving sessions from an agent](#driving-sessions-from-an-agent));
 - the **dotfiles** around them: shell, VS Code settings, shortcuts, Claude Code
   hook wiring. New machine: `git clone && ./install.sh`.
 
@@ -293,7 +298,9 @@ session (or a script) can run the other sessions without clicking:
 ```sh
 wts claude 20261125-110907        # open Claude Code on that session (claudeMode applies)
 wts claude-close 20261125-110907  # close its Claude terminal
+wts claude-panel 20261125-110907  # the session alone in a window, Claude panel open
 wts open 20261125-110907          # open the session in its own window
+wts rm 20261125-110907            # delete it: worktrees, windows, card (--force if work is unpushed)
 wts card 20261125-110907 wip      # move its card
 wts name 20261125-110907 "billing revamp"
 wts columns todo="To Do" doing="In Progress" review="In Review"
@@ -301,10 +308,14 @@ wts state                         # columns, cards and names as JSON
 wts inbox                         # sessions waiting on a human; --json, --clear
 ```
 
-`claude`, `claude-close` and `open` go through the extension's URL handler
+`claude`, `claude-close`, `claude-panel` and `open` go through the extension's URL handler
 (`vscode://tec0r.worktree-station/<action>?session=<id>`; `WTS_VSCODE_SCHEME`
 picks another editor build): VS Code routes the link to its last focused
-window. `card`, `name` and `columns` write `state.json` atomically. A card whose
+window. `rm` stays in the shell on purpose (any web page can open a `vscode://`
+link): it refuses a session holding uncommitted or unpushed work unless `--force`,
+asks the windows open on the session to close, then deletes its worktrees, its
+`.code-workspace` and its card. `card`, `name` and `columns` write `state.json`
+atomically. A card whose
 column disappears falls back to the first column.
 
 The inbox is fed by a Claude Code **Notification** hook
