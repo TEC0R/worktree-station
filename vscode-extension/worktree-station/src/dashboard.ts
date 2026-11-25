@@ -347,7 +347,7 @@ function nonce(): string {
   return out;
 }
 
-function html(webview: vscode.Webview): string {
+export function html(webview: vscode.Webview): string {
   const n = nonce();
   return `<!DOCTYPE html>
 <html lang="en">
@@ -364,7 +364,9 @@ function html(webview: vscode.Webview): string {
     color: var(--vscode-foreground);
     background: var(--vscode-editor-background);
   }
-  .wrap { max-width: 1100px; margin: 0 auto; }
+  /* Wide enough for five kanban columns side by side on a large screen. */
+  .wrap { max-width: 1600px; margin: 0 auto; }
+  @media (max-width: 600px) { body { padding: 12px 14px 32px; } }
   header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
   h1 { font-size: 1.35em; margin: 0; font-weight: 600; }
   .bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 26px; }
@@ -388,8 +390,11 @@ function html(webview: vscode.Webview): string {
     background: var(--vscode-inputValidation-errorBackground);
     border-color: var(--vscode-inputValidation-errorBorder);
   }
-  .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: stretch; }
-  @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
+  /* As many columns as fit, never narrower than 260px nor wider than the window: one per row on a phone. */
+  .board {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    gap: 14px; align-items: stretch;
+  }
   .col {
     display: flex; flex-direction: column;
     border: 1px dashed transparent; border-radius: 8px; padding: 6px;
@@ -415,6 +420,10 @@ function html(webview: vscode.Webview): string {
   }
   .card:hover h3 .ghost { opacity: 1; }
   .card h3[data-rn] { cursor: text; }
+  /* A long name ends with "…" (full name on hover) instead of stretching the card. */
+  .col, .card { min-width: 0; }
+  .card h3 .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card h3 .tag, .card h3 .move, .card h3 .ghost { flex: none; }
   .col .empty { padding: 10px 6px; }
   .card {
     border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.28));
@@ -437,6 +446,8 @@ function html(webview: vscode.Webview): string {
   .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
   table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
   td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,.18)); }
+  /* Action buttons wrap under each other on a narrow window instead of widening the table. */
+  td.num:last-child { white-space: normal; }
   td.num { text-align: right; color: var(--vscode-descriptionForeground); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ok { color: var(--vscode-charts-green); }
   .ko { color: var(--vscode-errorForeground); }
@@ -529,7 +540,8 @@ function sessionCard(s) {
     esc(s.id) + '">' +
     "<h3" + (s.id ? ' data-rn="' + esc(s.id) + '" data-label="' + esc(s.label) +
       '" title="Double-click to rename"' : "") + ">" + renameBtn(s) +
-    esc(s.label) + (s.busy ? '<span class="tag">busy</span>' : "") +
+    '<span class="name" title="' + esc(s.label) + '">' + esc(s.label) + "</span>" +
+    (s.busy ? '<span class="tag">busy</span>' : "") +
     (s.loaded ? '<span class="tag">here</span>' : "") + moveBtns(s) + '</h3>' +
     s.worktrees.map(wtLine).join("") +
     '<div class="acts">' + acts.join("") + "</div></div>";

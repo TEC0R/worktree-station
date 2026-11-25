@@ -5,3 +5,4 @@ out/**
 esbuild.mjs
 tsconfig.json
 **/*.map
+scripts/**
