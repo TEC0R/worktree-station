@@ -388,7 +388,7 @@ function html(webview: vscode.Webview): string {
     background: var(--vscode-inputValidation-errorBackground);
     border-color: var(--vscode-inputValidation-errorBorder);
   }
-  .board { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(220px, 1fr)); gap: 14px; overflow-x: auto; align-items: stretch; }
+  .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: stretch; }
   @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
   .col {
     display: flex; flex-direction: column;
@@ -503,9 +503,9 @@ function moveBtns(s) {
   const i = COLS.findIndex((c) => c.id === s.column);
   let out = '<span class="move">';
   if (i > 0) out += '<button draggable="false" data-cmd="move" data-arg="' + esc(s.id) +
-    '" data-dir="' + COLS[i - 1].id + '" title="To ' + COLS[i - 1].label + '">←</button>';
+    '" data-dir="' + esc(COLS[i - 1].id) + '" title="To ' + esc(COLS[i - 1].label) + '">←</button>';
   if (i < COLS.length - 1) out += '<button draggable="false" data-cmd="move" data-arg="' + esc(s.id) +
-    '" data-dir="' + COLS[i + 1].id + '" title="To ' + COLS[i + 1].label + '">→</button>';
+    '" data-dir="' + esc(COLS[i + 1].id) + '" title="To ' + esc(COLS[i + 1].label) + '">→</button>';
   return out + "</span>";
 }
 
@@ -536,7 +536,10 @@ function sessionCard(s) {
 }
 
 function board(sessions) {
-  return '<div class="board" style="--cols:' + COLS.length + '">' + COLS.map((c) => {
+  // Columns follow the ticket statuses, often more than fit: only those holding a card
+  // are drawn, and they wrap instead of scrolling sideways.
+  const used = COLS.filter((c) => sessions.some((s) => s.column === c.id));
+  return '<div class="board">' + used.map((c) => {
     const inCol = sessions.filter((s) => s.column === c.id);
     return '<div class="col" data-col="' + esc(c.id) + '"><h4>' + esc(c.label) +
       '<span class="tag">' + inCol.length + '</span></h4><div class="stack">' +

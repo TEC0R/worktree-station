@@ -188,7 +188,8 @@ written only outside `~/<name>`. Two repos cannot share the same folder name.
 
 `⌃⌥E` opens the **Worktree Station** dashboard as an editor tab: sessions as a
 kanban (**Preparation / In progress / UAT** by default, any list set by
-`wts columns`), then the repos and the latest runs.
+`wts columns`), then the repos and the latest runs. Only columns holding a card
+are drawn, and they wrap onto a new row rather than scroll sideways.
 
 - A card moves by drag and drop or with its `←` `→` arrows, and is renamed by
   double-clicking its title (or with its pencil). Column and name live in
