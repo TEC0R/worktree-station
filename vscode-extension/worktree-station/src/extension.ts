@@ -460,6 +460,31 @@ function migrateLegacyState(ctx: vscode.ExtensionContext): void {
   }
 }
 
+/**
+ * `vscode://<publisher>.worktree-station/<action>?session=<id>`, opened by `wts claude`
+ * and friends: lets a script or an agent outside VS Code run a session action that
+ * only exists as an extension command (open the window, start or close Claude).
+ */
+const URI_ACTIONS: Record<string, string> = {
+  "/claude": "worktreeStation.session.claude",
+  "/claude-close": "worktreeStation.session.claudeClose",
+  "/open": "worktreeStation.session.openWindow",
+};
+
+async function handleUri(uri: vscode.Uri): Promise<void> {
+  const command = URI_ACTIONS[uri.path];
+  if (!command) {
+    throw new Error(`unknown action ${uri.path}; known: ${Object.keys(URI_ACTIONS).join(", ")}`);
+  }
+  const id = new URLSearchParams(uri.query).get("session") ?? "";
+  const s = (await api.sessions()).find((x) => x.id === id);
+  if (!s) {
+    throw new Error(`no session ${id || "(missing ?session=)"}`);
+  }
+  const open = new Set((vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath));
+  await vscode.commands.executeCommand(command, new SessionNode(s, s.worktrees.some((w) => open.has(w.path))));
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   migrateLegacyState(context);
   sessions = new SessionsProvider();
@@ -477,6 +502,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const reg = vscode.commands.registerCommand;
   context.subscriptions.push(
     status,
+    vscode.window.registerUriHandler({ handleUri: (uri) => handleUri(uri).catch(fail) }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("worktreeStation.claudeMode")) {
         void dashboard.refreshDashboard();

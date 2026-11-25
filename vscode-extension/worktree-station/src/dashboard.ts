@@ -4,46 +4,34 @@
 import * as vscode from "vscode";
 import * as api from "./api";
 import { RunRecord, runs } from "./run";
+import * as state from "./state";
 import { RepoNode, SessionNode, WorktreeNode } from "./trees";
 
 const VIEW_TYPE = "worktreeStation.dashboard";
-const BOARD_KEY = "worktreeStation.board";
-const NAMES_KEY = "worktreeStation.names";
-
-export type Column = "prep" | "wip" | "uat";
-const COLUMNS: Column[] = ["prep", "wip", "uat"];
-
 /**
- * Column set by hand, shared across windows through globalState. A session
- * missing from the table is in Preparation: that is where a session is born, and
- * git state cannot tell where it stands in the workflow.
+ * Column, name and column list live in a shared file (see state.ts), so that
+ * `wts card`, `wts name` and an agent outside VS Code change the same board.
+ * A session missing from the board is in the first column: that is where a
+ * session is born, and git state cannot tell where it stands in the workflow.
  */
-function assignments(): Record<string, Column> {
-  return ctx?.globalState.get<Record<string, Column>>(BOARD_KEY, {}) ?? {};
-}
-
-async function assign(id: string, column: Column): Promise<void> {
-  if (!ctx || !id) {
-    return;
+function assign(id: string, column: string): void {
+  if (id) {
+    state.update((s) => {
+      s.board[id] = column;
+    });
   }
-  const next = { ...assignments(), [id]: column };
-  await ctx.globalState.update(BOARD_KEY, next);
 }
 
 /**
  * Name given by hand. The timestamp stays the session's identity; the name only
  * makes it readable — "billing revamp" says what 20260918-101010 hides.
  */
-function names(): Record<string, string> {
-  return ctx?.globalState.get<Record<string, string>>(NAMES_KEY, {}) ?? {};
-}
-
 async function rename(id: string, label: string): Promise<void> {
   const s = (await api.sessions()).find((x) => x.id === id);
-  if (!ctx || !s) {
+  if (!s) {
     return;
   }
-  const current = names()[id] ?? "";
+  const current = state.read().names[id] ?? "";
   const answer = await vscode.window.showInputBox({
     title: `Rename ${label}`,
     prompt: "Clear the field to restore the original name",
@@ -53,30 +41,27 @@ async function rename(id: string, label: string): Promise<void> {
   if (answer === undefined) {
     return;
   }
-  const next = { ...names() };
   const trimmed = answer.trim();
-  if (trimmed) {
-    next[id] = trimmed;
-  } else {
-    delete next[id];
-  }
-  await ctx.globalState.update(NAMES_KEY, next);
+  state.update((st) => {
+    if (trimmed) {
+      st.names[id] = trimmed;
+    } else {
+      delete st.names[id];
+    }
+  });
 }
 
 /** Forget sessions that are gone, otherwise the tables grow with every deletion. */
-async function prune(alive: Set<string>): Promise<void> {
-  if (!ctx) {
-    return;
-  }
-  for (const key of [BOARD_KEY, NAMES_KEY]) {
-    const current = ctx.globalState.get<Record<string, string>>(key, {}) ?? {};
-    const kept = Object.fromEntries(Object.entries(current).filter(([id]) => alive.has(id)));
-    if (Object.keys(kept).length !== Object.keys(current).length) {
-      await ctx.globalState.update(key, kept);
-    }
+function prune(st: state.BoardState, alive: Set<string>): void {
+  const keep = (t: Record<string, string>) => Object.fromEntries(Object.entries(t).filter(([id]) => alive.has(id)));
+  const size = (t: Record<string, string>) => Object.keys(t).length;
+  if (size(keep(st.board)) !== size(st.board) || size(keep(st.names)) !== size(st.names)) {
+    state.update((s) => {
+      s.board = keep(s.board);
+      s.names = keep(s.names);
+    });
   }
 }
-
 
 let panel: vscode.WebviewPanel | undefined;
 let ctx: vscode.ExtensionContext | undefined;
@@ -91,7 +76,7 @@ interface Payload {
     origin: string;
     loaded: boolean;
     busy: boolean;
-    column: Column;
+    column: string;
     worktrees: {
       path: string;
       name: string;
@@ -107,6 +92,7 @@ interface Payload {
     }[];
   }[];
   repos: { path: string; name: string; branch: string; base: string; dirty: number; ahead: number; behind: number }[];
+  columns: state.ColumnDef[];
   runs: RunRecord[];
   claudeMode: string;
 }
@@ -118,16 +104,21 @@ function loadedPaths(): Set<string> {
 async function collect(): Promise<Payload> {
   const [sessionList, repoList] = await Promise.all([api.sessions(), api.repos()]);
   const open = loadedPaths();
-  await prune(new Set(sessionList.map((s) => s.id).filter(Boolean)));
-  const manual = assignments();
-  const named = names();
+  const st = state.read();
+  // A sync that fails to list sessions returns none: pruning then would wipe the board.
+  if (sessionList.length) {
+    prune(st, new Set(sessionList.map((s) => s.id).filter(Boolean)));
+  }
+  const ids = new Set(st.columns.map((c) => c.id));
+  const first = st.columns[0].id;
 
   return {
     sessions: sessionList.map((s) => ({
       id: s.id,
-      label: named[s.id] ?? s.label,
+      label: st.names[s.id] ?? s.label,
       origin: s.label,
-      column: manual[s.id] ?? "prep",
+      // A column removed by `wts columns` sends its cards back to the first one.
+      column: ids.has(st.board[s.id]) ? st.board[s.id] : first,
       loaded: s.worktrees.some((w) => open.has(w.path)),
       busy: s.busy,
       worktrees: s.worktrees.map((w) => ({
@@ -153,6 +144,7 @@ async function collect(): Promise<Payload> {
       ahead: r.ahead,
       behind: r.behind,
     })),
+    columns: st.columns,
     runs: runs().slice(0, 12),
     claudeMode: vscode.workspace.getConfiguration("worktreeStation").get<string>("claudeMode") ?? "terminal",
   };
@@ -162,7 +154,14 @@ async function collect(): Promise<Payload> {
 
 export function initDashboard(context: vscode.ExtensionContext): void {
   ctx = context;
+  state.migrate(context);
   context.subscriptions.push(
+    // `wts card`, an agent or another window changed the board: show it.
+    state.watch(() => {
+      refreshDashboard().catch((e) =>
+        vscode.window.showErrorMessage(`Worktree Station: ${e instanceof Error ? e.message : String(e)}`),
+      );
+    }),
     vscode.window.registerWebviewPanelSerializer(VIEW_TYPE, {
       async deserializeWebviewPanel(restored: vscode.WebviewPanel) {
         adopt(restored);
@@ -247,9 +246,9 @@ async function handle(msg: Msg): Promise<void> {
     return;
   }
   if (msg.cmd === "move") {
-    const column = msg.dir as Column;
-    if (msg.arg && COLUMNS.includes(column)) {
-      await assign(msg.arg, column);
+    const column = msg.dir ?? "";
+    if (msg.arg && state.read().columns.some((c) => c.id === column)) {
+      assign(msg.arg, column);
       await refreshDashboard();
     }
     return;
@@ -389,7 +388,7 @@ function html(webview: vscode.Webview): string {
     background: var(--vscode-inputValidation-errorBackground);
     border-color: var(--vscode-inputValidation-errorBorder);
   }
-  .board { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 14px; align-items: stretch; }
+  .board { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(220px, 1fr)); gap: 14px; overflow-x: auto; align-items: stretch; }
   @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
   .col {
     display: flex; flex-direction: column;
@@ -487,7 +486,8 @@ function wtLine(w) {
     ' · <code>' + esc(w.branch) + '</code></span><span class="st">' + st + '</span></div>';
 }
 
-const COLS = [
+// Columns come with each state message (shared state file); these are the defaults.
+let COLS = [
   { id: "prep", label: "Preparation" },
   { id: "wip", label: "In progress" },
   { id: "uat", label: "UAT" },
@@ -536,9 +536,9 @@ function sessionCard(s) {
 }
 
 function board(sessions) {
-  return '<div class="board">' + COLS.map((c) => {
+  return '<div class="board" style="--cols:' + COLS.length + '">' + COLS.map((c) => {
     const inCol = sessions.filter((s) => s.column === c.id);
-    return '<div class="col" data-col="' + c.id + '"><h4>' + esc(c.label) +
+    return '<div class="col" data-col="' + esc(c.id) + '"><h4>' + esc(c.label) +
       '<span class="tag">' + inCol.length + '</span></h4><div class="stack">' +
       (inCol.length ? inCol.map(sessionCard).join("")
                     : '<div class="empty">Drop a session here.</div>') +
@@ -568,6 +568,7 @@ function runRow(r) {
 
 function render(d) {
   claudeMode = d.claudeMode || "terminal";
+  if (d.columns && d.columns.length) COLS = d.columns;
   let out = "<h2>Sessions</h2>";
   out += d.sessions.length
     ? board(d.sessions)

@@ -757,6 +757,16 @@ ${C_B}dbt${C_RST}  ${C_DIM}(from any worktree)${C_RST}
   wts dbt parse             regenerate the manifest (dbt Power User lineage)
   wts dbt ls [selector]     list models (default: state:modified+)
 
+${C_B}Agents${C_RST}  ${C_DIM}(state in ~/.config/wts/state.json, shared with the extension)${C_RST}
+  wts claude <session>      start Claude in the session (through the extension)
+  wts claude-close <session> close the session's Claude
+  wts open <session>        open the session's window
+  wts state                 board state as JSON (columns, cards, names)
+  wts card <session> <col>  move a session to a column
+  wts name <session> [name] name a session (no name: back to its timestamp)
+  wts columns <id>=<label>... replace the board columns, in order
+  wts inbox [--json] [--clear] sessions waiting on a human (Claude Code hook)
+
 ${C_B}Misc${C_RST}
   wts fmt <file.sql>        sqlfluff fix
   wts lkml [path]           parse/validate LookML
@@ -767,6 +777,26 @@ ${C_DIM}
 dbt flags applied automatically: ${WTS_DBT_FLAGS[*]} --quiet
 Config: \$DOTFILES/lib/config.sh${C_RST}
 "
+}
+
+# ── agent control ─────────────────────────────────────────────────────────────
+# Actions only the VS Code extension can do (Claude in a session, the session's
+# window) are reached through its URI handler, so a script or an agent can
+# trigger them from outside VS Code.
+wts_open_uri() {
+  case "$OSTYPE" in
+    darwin*) open "$1" ;;
+    *)       xdg-open "$1" >/dev/null 2>&1 ;;
+  esac
+}
+
+cmd_session_uri() {  # action, session timestamp
+  local action="$1" sid="${2:-}"
+  if [[ ! "$sid" =~ '^[0-9]{8}-[0-9]{6}$' ]]; then
+    err "usage: wts $action <session timestamp, e.g. 20261125-110907>"
+    return 1
+  fi
+  wts_open_uri "${WTS_VSCODE_SCHEME:-vscode}://tec0r.worktree-station/${action}?session=${sid}"
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
@@ -781,6 +811,9 @@ case "${1:-help}" in
   profile)  shift; cmd_profile "$@" ;;
   doctor)   shift; cmd_doctor "$@" ;;
   api)      shift; exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-api.py" "$@" ;;
+  claude|claude-close|open) cmd_session_uri "$@" ;;
+  state)    shift; exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-state.py" show "$@" ;;
+  card|name|columns|inbox) exec "${WTS_PYTHON:-python3}" "$DOTFILES/bin/wts-state.py" "$@" ;;
   help|-h|--help) cmd_help ;;
   *) err "unknown command: $1"; cmd_help; exit 1 ;;
 esac

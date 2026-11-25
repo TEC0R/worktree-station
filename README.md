@@ -40,7 +40,7 @@ wts repo add https://github.com/you/your-repo   # declare your first repo
 | …/`keybindings.json` | `vscode/keybindings.json` |
 | …/`tasks.json` | `vscode/tasks.json` (**user** tasks, valid in any worktree) |
 | …/`snippets/*.code-snippets` | `vscode/snippets/` |
-| `~/.claude/settings.json` | `PostToolUse` hook and `"outputStyle": "Concise"` merged in, never replaced (a style already chosen in `/config` is kept) |
+| `~/.claude/settings.json` | `PostToolUse` (dbt conventions) and `Notification` (wts inbox) hooks and `"outputStyle": "Concise"` merged in, never replaced (a style already chosen in `/config` is kept) |
 | `~/.claude/scripts/replay_progress.py` | `claude/scripts/replay_progress.py`: progress bar of a headless data-agency replay (`python3 -I ~/.claude/scripts/replay_progress.py <stream.jsonl> --follow`) |
 | `~/.config/wts/secrets.env` | created empty, `chmod 600` |
 | `Worktree Station` VS Code extension | `vscode-extension/worktree-station/`, built then installed |
@@ -94,7 +94,8 @@ excluded by `.gitignore`. To share the extension without the repo, send the
 the extension reimplements nothing and calls the CLI.
 
 Uninstalling (`code --uninstall-extension tec0r.worktree-station`) wipes its
-`globalState`: kanban columns, session names and run history are lost.
+`globalState`: run history is lost. Kanban columns and session names live in
+`~/.config/wts/state.json` and survive.
 
 ## Configuration
 
@@ -102,6 +103,8 @@ Uninstalling (`code --uninstall-extension tec0r.worktree-station`) wipes its
 |---|---|
 | `~/.config/wts/repos` | the repo list, managed by `wts repo` / the dashboard (see [Repos](#repos)) |
 | `~/.config/wts/config.sh` | optional machine-specific overrides, loaded before the defaults of `lib/config.sh`: `WTS_ROOT` (where clones live, `~` by default), `WTS_WORKTREE_DIR` (`~/worktrees`), `WTS_VENV`, personal shell functions… |
+| `~/.config/wts/state.json` | kanban columns, the column of each session and session names, shared by the dashboard, `wts card` / `name` / `columns` and any agent (see [Driving sessions from an agent](#driving-sessions-from-an-agent)) |
+| `~/.config/wts/inbox.jsonl` | Claude Code sessions waiting on a human, one JSON line per notification |
 | `~/.config/wts/secrets.env` | tokens and keys, `chmod 600`, loaded at shell startup; a file with wider permissions is refused with a warning |
 
 Nothing sensitive or machine-specific lives in this repo.
@@ -184,11 +187,14 @@ written only outside `~/<name>`. Two repos cannot share the same folder name.
 ## The dashboard
 
 `⌃⌥E` opens the **Worktree Station** dashboard as an editor tab: sessions as a
-**Preparation / In progress / UAT** kanban, then the repos and the latest runs.
+kanban (**Preparation / In progress / UAT** by default, any list set by
+`wts columns`), then the repos and the latest runs.
 
 - A card moves by drag and drop or with its `←` `→` arrows, and is renamed by
   double-clicking its title (or with its pencil). Column and name live in
-  `globalState`, shared by every window. A session starts in *Preparation* and
+  `~/.config/wts/state.json`, shared by every window and by the CLI; a change
+  from outside (`wts card`, an agent) shows up at once. A session starts in the
+  first column and
   only leaves it when moved: git state says what is on disk, not where the work
   stands. A cleared name falls back to the timestamp.
 - Card buttons follow `worktreeStation.claudeMode`: **✦ Claude**, Terminal,
@@ -277,6 +283,35 @@ panel opens there on its own (handoff through the shared `globalState`, then
 `claude-vscode.editor.openLast`). If it does not, `⌘⇧Esc` opens the panel.
 
 Related settings: `worktreeStation.claudePath`, `worktreeStation.claudeArgs`.
+
+## Driving sessions from an agent
+
+Everything a card does can be done from a shell, so a supervising Claude Code
+session (or a script) can run the other sessions without clicking:
+
+```sh
+wts claude 20261125-110907        # open Claude Code on that session (claudeMode applies)
+wts claude-close 20261125-110907  # close its Claude terminal
+wts open 20261125-110907          # open the session in its own window
+wts card 20261125-110907 wip      # move its card
+wts name 20261125-110907 "billing revamp"
+wts columns todo="To Do" doing="In Progress" review="In Review"
+wts state                         # columns, cards and names as JSON
+wts inbox                         # sessions waiting on a human; --json, --clear
+```
+
+`claude`, `claude-close` and `open` go through the extension's URL handler
+(`vscode://tec0r.worktree-station/<action>?session=<id>`; `WTS_VSCODE_SCHEME`
+picks another editor build): VS Code routes the link to its last focused
+window. `card`, `name` and `columns` write `state.json` atomically. A card whose
+column disappears falls back to the first column.
+
+The inbox is fed by a Claude Code **Notification** hook
+(`claude/hooks/notify-inbox.py`, installed by `install.sh`): whenever a session
+asks for a permission or waits for input, a line with the session timestamp,
+the folder and the message is appended. Each worktree session can then be
+messaged by its folder name from the supervising session (`SendMessage`), and
+only the questions a human must answer come back up.
 
 ## Shortcuts
 
