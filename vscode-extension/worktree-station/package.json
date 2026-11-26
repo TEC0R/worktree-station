@@ -585,7 +585,7 @@
           "default": "known",
           "enumDescriptions": [
             "Never open the dashboard by itself.",
-            "Only when the window contains a known worktree or repo.",
+            "Only when the window contains a declared repo (never in a session window).",
             "In every VS Code window, whatever it holds."
           ],
           "markdownDescription": "When to open the dashboard as an editor tab on startup."

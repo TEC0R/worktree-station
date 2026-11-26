@@ -220,8 +220,8 @@ are drawn, and they wrap onto a new row rather than scroll sideways.
   environment found the terminal opens directly. Each environment gets its own
   terminal, `<worktree> · <env>`.
 - It opens at startup according to `worktreeStation.dashboardOnStartup`:
-  `never`, `known` (default — only when the window contains a worktree or a
-  declared repo) or `always`.
+  `never`, `known` (default — only when the window contains a declared repo, so
+  never in a session window) or `always`.
 
 The **side bar** (`⌃⌥⇧E`) gives the same information in tree form — Sessions,
 Repos, Latest runs — for a quick glance. Every button of the dashboard calls a

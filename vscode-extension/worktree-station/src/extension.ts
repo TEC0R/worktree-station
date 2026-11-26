@@ -752,8 +752,9 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 /**
- * The dashboard opens by itself, but only in a window about a known repo or
- * worktree: otherwise it would pop up in any project opened on this machine.
+ * The dashboard opens by itself, but only in a window about a declared repo:
+ * otherwise it would pop up in any project opened on this machine, and in each
+ * session window, where the work happens and the main window already shows it.
  */
 async function autoOpenDashboard(): Promise<void> {
   if (dashboard.dashboardIsOpen()) {
@@ -774,15 +775,7 @@ async function autoOpenDashboard(): Promise<void> {
   if (open.size === 0) {
     return;
   }
-  const known = new Set<string>();
-  for (const s of await api.sessions()) {
-    for (const w of s.worktrees) {
-      known.add(w.path);
-    }
-  }
-  for (const r of await api.repos()) {
-    known.add(r.path);
-  }
+  const known = new Set((await api.repos()).map((r) => r.path));
   if ([...open].some((p) => known.has(p))) {
     await dashboard.openDashboard();
   }
