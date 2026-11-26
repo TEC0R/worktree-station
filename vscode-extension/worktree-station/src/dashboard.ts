@@ -76,6 +76,8 @@ interface Payload {
     origin: string;
     loaded: boolean;
     busy: boolean;
+    /** What the session's Claude does now (Claude Code hook); absent when none ran since. */
+    activity?: state.Activity;
     column: string;
     worktrees: {
       path: string;
@@ -105,6 +107,7 @@ async function collect(): Promise<Payload> {
   const [sessionList, repoList] = await Promise.all([api.sessions(), api.repos()]);
   const open = loadedPaths();
   const st = state.read();
+  const activity = state.readActivity();
   // A sync that fails to list sessions returns none: pruning then would wipe the board.
   if (sessionList.length) {
     prune(st, new Set(sessionList.map((s) => s.id).filter(Boolean)));
@@ -121,6 +124,7 @@ async function collect(): Promise<Payload> {
       column: ids.has(st.board[s.id]) ? st.board[s.id] : first,
       loaded: s.worktrees.some((w) => open.has(w.path)),
       busy: s.busy,
+      activity: activity[s.id],
       worktrees: s.worktrees.map((w) => ({
         path: w.path,
         name: w.name,
@@ -436,6 +440,17 @@ export function html(webview: vscode.Webview): string {
     font-size: 0.72em; padding: 1px 7px; border-radius: 9px; font-weight: 500;
     background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
   }
+  .tag.working::before {
+    content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 4px;
+    border-radius: 50%; background: currentColor; vertical-align: middle;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .tag.waiting {
+    background: var(--vscode-inputValidation-warningBackground, #b89500);
+    color: var(--vscode-inputValidation-warningForeground, #fff);
+  }
+  @keyframes pulse { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .tag.working::before { animation: none; } }
   .wt { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 0.88em; }
   .wt + .wt { border-top: 1px solid var(--vscode-panel-border, rgba(128,128,128,.18)); }
   .wt .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -541,7 +556,9 @@ function sessionCard(s) {
     "<h3" + (s.id ? ' data-rn="' + esc(s.id) + '" data-label="' + esc(s.label) +
       '" title="Double-click to rename"' : "") + ">" + renameBtn(s) +
     '<span class="name" title="' + esc(s.label) + '">' + esc(s.label) + "</span>" +
-    (s.busy ? '<span class="tag">busy</span>' : "") +
+    // "busy" (work not pushed) still guards deletion; the header says what Claude does now.
+    (s.activity === "working" ? '<span class="tag working" title="Claude is working">working</span>' : "") +
+    (s.activity === "waiting" ? '<span class="tag waiting" title="Claude waits on you">waiting</span>' : "") +
     (s.loaded ? '<span class="tag">here</span>' : "") + moveBtns(s) + '</h3>' +
     s.worktrees.map(wtLine).join("") +
     '<div class="acts">' + acts.join("") + "</div></div>";

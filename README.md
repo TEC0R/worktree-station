@@ -203,6 +203,12 @@ are drawn, and they wrap onto a new row rather than scroll sideways.
   first column and
   only leaves it when moved: git state says what is on disk, not where the work
   stands. A cleared name falls back to the timestamp.
+- A card's title says what its Claude does **now**: **working** (pulsing dot) while
+  it runs a turn, **waiting** when it needs a permission or an answer, nothing once
+  the turn is over. Written by the Claude Code hook `claude/hooks/activity.py`
+  (installed by `install.sh`) to `~/.config/wts/activity.json`, in every mode
+  (terminal, panel, background). Unpushed work no longer shows there: it still
+  blocks deletion and shows in the sidebar.
 - Card buttons follow `worktreeStation.claudeMode`: **✦ Claude**, Terminal,
   Window, Delete in `terminal` mode; **Window**, Terminal, Delete in `window`
   mode. *Terminal* asks which repo when the session has several.

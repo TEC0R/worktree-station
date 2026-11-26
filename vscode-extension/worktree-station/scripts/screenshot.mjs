@@ -89,10 +89,10 @@ try {
       session("20261124-091500", "Churn rate excludes trial accounts", "in-progress", [
         wt("analytics", "dbt", "fix/abc-12-churn-trials", { dirty: 3, busy: true, reason: "touched less than 8 h ago" }),
         wt("bi", "lookml", "fix/abc-12-churn-trials", { ahead: 1 }),
-      ], { loaded: true, busy: true }),
+      ], { loaded: true, busy: true, activity: "working" }),
       session("20261123-143000", "Weekly revenue export", "in-progress", [
         wt("analytics", "dbt", "feat/abc-9-weekly-export", { ahead: 2 }),
-      ]),
+      ], { activity: "waiting" }),
       session("20261121-100000", "Billing model revamp", "to-do", [
         wt("analytics", "dbt", "wt-main-20261121-100000"),
         wt("bi", "lookml", "wt-main-20261121-100000"),

@@ -24,6 +24,20 @@ export interface BoardState {
 
 const DIR = process.env.WTS_CONFIG_DIR || path.join(os.homedir(), ".config", "wts");
 export const STATE_FILE = process.env.WTS_STATE_FILE || path.join(DIR, "state.json");
+/** Written by the Claude Code hook claude/hooks/activity.py: what each session's Claude does now. */
+export const ACTIVITY_FILE = process.env.WTS_ACTIVITY_FILE || path.join(DIR, "activity.json");
+
+export type Activity = "working" | "waiting" | "idle";
+
+/** Session timestamp → state. Missing or torn file: no activity shown, never an error (display only). */
+export function readActivity(): Record<string, Activity> {
+  try {
+    const data = JSON.parse(fs.readFileSync(ACTIVITY_FILE, "utf8")) as Record<string, { state?: Activity }>;
+    return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.state ?? "idle"]));
+  } catch {
+    return {};
+  }
+}
 
 export const DEFAULT_COLUMNS: ColumnDef[] = [
   { id: "prep", label: "Preparation" },
@@ -84,12 +98,12 @@ export function migrate(ctx: vscode.ExtensionContext): void {
   write({ columns: DEFAULT_COLUMNS, board: board ?? {}, names: names ?? {} });
 }
 
-/** Calls back when the file changes, whoever wrote it (wts, an agent, another window). */
+/** Calls back when the board or the activity file changes, whoever wrote it (wts, an agent, a hook). */
 export function watch(onChange: () => void): vscode.Disposable {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
   let timer: NodeJS.Timeout | undefined;
   const watcher = fs.watch(path.dirname(STATE_FILE), (_event, file) => {
-    if (file !== path.basename(STATE_FILE)) {
+    if (file !== path.basename(STATE_FILE) && file !== path.basename(ACTIVITY_FILE)) {
       return;
     }
     // An atomic replace fires several events: refresh once.

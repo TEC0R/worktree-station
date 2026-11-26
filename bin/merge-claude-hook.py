@@ -20,6 +20,12 @@ HOOKS = [
     ("PostToolUse", "Write|Edit|MultiEdit", "dbt-conventions.py", 15, "Checking dbt conventions…"),
     # Writes to the wts inbox when a session waits on a human (permission, idle).
     ("Notification", None, "notify-inbox.py", 5, None),
+    # What each session's Claude is doing now (working, waiting, idle), shown on its card.
+    ("UserPromptSubmit", None, "activity.py", 5, None),
+    ("PostToolUse", None, "activity.py", 5, None),
+    ("Notification", None, "activity.py", 5, None),
+    ("Stop", None, "activity.py", 5, None),
+    ("SessionEnd", None, "activity.py", 5, None),
 ]
 # Written only when the key is absent: a value chosen through /config wins.
 DEFAULTS = {
