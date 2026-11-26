@@ -271,6 +271,11 @@ attaches to it: diffs in the editor, `@`-mentions, current selection. Hence the
 claude --add-dir '<every other worktree of the session>'
 ```
 
+When the worktree already has a Claude conversation, the button adds `--continue`
+and reopens it, so Claude keeps what it learned on that session (unless
+`worktreeStation.claudeArgs` already picks a conversation). The panel does the same
+through `claude-vscode.editor.openLast`.
+
 One conversation per session, rooted in the right worktree — so the right
 `CLAUDE.md`, `.claude/skills/` and hooks — with read/write access to the
 session's other repos. Several sessions = several Claude terminals side by side.

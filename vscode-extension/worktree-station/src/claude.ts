@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Terry Cornelusse
 
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { Session, Worktree } from "./api";
@@ -108,6 +110,26 @@ function cfg<T>(key: string, fallback: T): T {
   return vscode.workspace.getConfiguration("worktreeStation").get<T>(key) ?? fallback;
 }
 
+/**
+ * Claude Code keeps a folder's conversations in <config>/projects/<cwd, every character other than
+ * a letter or a digit replaced by "-">. A conversation there means the session was worked on
+ * before: `--continue` reopens it, so Claude keeps what it learned instead of starting cold.
+ */
+export function hasConversation(
+  cwd: string,
+  configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+): boolean {
+  const dir = path.join(configDir, "projects", cwd.replace(/[^A-Za-z0-9]/g, "-"));
+  try {
+    return fs.readdirSync(dir).some((f) => f.endsWith(".jsonl"));
+  } catch {
+    // No folder: Claude never ran here.
+    return false;
+  }
+}
+
+const PICKS_CONVERSATION = new Set(["-c", "--continue", "-r", "--resume", "--session-id"]);
+
 /** Single quotes for the shell: nothing is interpreted, except the quote itself. */
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -132,7 +154,10 @@ function launch(key: string, cwd: string, addDirs: string[], title: string): voi
 
   const bin = cfg("claudePath", "claude");
   const extra = cfg<string[]>("claudeArgs", []);
+  // claudeArgs may already pick a conversation: never pass two.
+  const resume = !extra.some((a) => PICKS_CONVERSATION.has(a)) && hasConversation(cwd);
   const args = [
+    ...(resume ? ["--continue"] : []),
     ...addDirs.flatMap((d) => ["--add-dir", shellQuote(d)]),
     ...extra.map(shellQuote),
   ];
