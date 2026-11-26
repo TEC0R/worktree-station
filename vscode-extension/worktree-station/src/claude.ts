@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { Session, Worktree } from "./api";
+import { claudeRunningIn } from "./running";
 
 /**
  * The Claude Code panel is locked to workspaceFolders[0]: in multi-root, all its
@@ -47,6 +48,12 @@ async function consumePanelRequest(): Promise<void> {
     return;
   }
   await state?.update(PENDING_KEY, undefined);
+  // A restored window may bring its Claude tab back before its process has written its session
+  // file: both the tabs and the live processes are checked, or openLast would open a second one.
+  const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+  if (hasClaudeTab() || claudeRunningIn(folders)) {
+    return;
+  }
   const ext = vscode.extensions.getExtension(CLAUDE_EXT);
   if (!ext) {
     return;
@@ -62,6 +69,29 @@ async function consumePanelRequest(): Promise<void> {
     );
   }
 }
+/** Claude Code's editor panel; VS Code prefixes webview view types, hence the includes. */
+const PANEL_VIEW_TYPE = "claudeVSCodePanel";
+
+function hasClaudeTab(): boolean {
+  return vscode.window.tabGroups.all.some((g) =>
+    g.tabs.some(
+      (t) => t.input instanceof vscode.TabInputWebview && t.input.viewType.includes(PANEL_VIEW_TYPE),
+    ),
+  );
+}
+
+/**
+ * One Claude per session: true, with a notice, when a Claude already runs in these folders, in
+ * this window or any other. The caller then shows what exists instead of starting a second one.
+ */
+export function alreadyRunning(folders: string[], label: string): boolean {
+  if (!claudeRunningIn(folders)) {
+    return false;
+  }
+  vscode.window.showInformationMessage(`Claude is already running in ${label}.`);
+  return true;
+}
+
 const emitter = new vscode.EventEmitter<void>();
 export const onDidChangeClaude = emitter.event;
 
@@ -190,6 +220,9 @@ export function openForSession(s: Session, hidden = false): void {
     vscode.window.showWarningMessage("This session has no worktree on disk.");
     return;
   }
+  if (alreadyRunning(live.map((w) => w.path), s.label)) {
+    return;
+  }
   const primary = live.find((w) => w.kind === "dbt") ?? live[0];
   const others = live.filter((w) => w.path !== primary.path).map((w) => w.path);
   launch(sessionKey(s), primary.path, others, `Claude ${s.label}`, hidden);
@@ -199,6 +232,9 @@ export function openForSession(s: Session, hidden = false): void {
 export function openForWorktree(w: Worktree): void {
   if (!w.exists) {
     vscode.window.showWarningMessage(`${w.name} does not exist on disk.`);
+    return;
+  }
+  if (alreadyRunning([w.path], w.name)) {
     return;
   }
   launch(worktreeKey(w), w.path, [], `Claude ${path.basename(w.path)}`);

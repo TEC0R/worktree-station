@@ -242,6 +242,13 @@ Creating a session does not open it: the notification offers **Load here**, plus
 (`claudeMode: window`). Ignoring it leaves the current window untouched.
 `worktreeStation.attachOnCreate: true` loads it right away.
 
+One Claude per session at a time: before starting one (✦ Claude, the window's
+Claude panel, `wts claude`, a worktree's Claude), the extension reads Claude
+Code's `~/.claude/sessions/<pid>.json` and, when a live process already has its
+cwd in a worktree of the session, shows that session's window with a notice
+instead of starting a second one. A restored window whose Claude tab is already
+open does not open another either.
+
 ### Deleting a session closes its windows
 
 VS Code offers no API to drive another window, so the extension keeps a registry

@@ -614,7 +614,8 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "package": "npm run build && vsce package --no-dependencies --allow-missing-repository -o worktree-station.vsix",
-    "screenshot": "node scripts/screenshot.mjs"
+    "screenshot": "node scripts/screenshot.mjs",
+    "test": "node --test test/"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

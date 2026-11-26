@@ -568,7 +568,13 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showErrorMessage("Could not generate the workspace file.");
         return;
       }
-      if (withClaude && claude.claudeExtensionAvailable()) {
+      // A Claude already running in the session: its window is shown, no second one is asked for.
+      const folders = n.session.worktrees.filter((w) => w.exists).map((w) => w.path);
+      if (
+        withClaude &&
+        claude.claudeExtensionAvailable() &&
+        !claude.alreadyRunning(folders, n.session.label)
+      ) {
         claude.markPanelWanted(ws);
       }
       await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(ws), {
