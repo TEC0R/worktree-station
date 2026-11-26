@@ -594,11 +594,18 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       claude.openForSession(n.session);
     }),
-    // For another Claude session (a chief of staff) that works through this one: no window opens.
-    reg("worktreeStation.session.claudeBackground", (n: unknown) => {
-      if (n instanceof SessionNode) {
-        claude.openForSession(n.session, true);
+    // For another Claude session (a chief of staff) that works through this one. In terminal mode
+    // no window opens: a hidden terminal. In window mode the Claude panel is the only way, so the
+    // session's window opens as with the button.
+    reg("worktreeStation.session.claudeBackground", async (n: unknown) => {
+      if (!(n instanceof SessionNode)) {
+        return;
       }
+      if (cfg<string>("claudeMode", "terminal") === "window") {
+        await vscode.commands.executeCommand("worktreeStation.session.claude", n);
+        return;
+      }
+      claude.openForSession(n.session, true);
     }),
     reg("worktreeStation.session.claudePanel", async (n: unknown) => {
       if (n instanceof SessionNode) {
