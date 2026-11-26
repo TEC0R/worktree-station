@@ -61,7 +61,7 @@
     "**/*venv/**": true,
     "**/tmp/**": true
   },
-  "worktreeStation.dashboardOnStartup": "always",
+  "worktreeStation.dashboardOnStartup": "never",
   "task.allowAutomaticTasks": "on",
   "task.quickOpen.history": 12,
   "terminal.integrated.enablePersistentSessions": false,
