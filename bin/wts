@@ -759,6 +759,9 @@ ${C_B}dbt${C_RST}  ${C_DIM}(from any worktree)${C_RST}
 
 ${C_B}Agents${C_RST}  ${C_DIM}(state in ~/.config/wts/state.json, shared with the extension)${C_RST}
   wts claude <session>      start Claude in the session (through the extension)
+  wts claude --background <session>
+                            same, in a hidden terminal of the current window (no new window);
+                            the session's ✦ button shows it
   wts claude-close <session> close the session's Claude
   wts claude-panel <session> open the session alone in a window, Claude panel open
   wts rm <session> [--force] delete the session: worktrees, windows, card (refuses unpushed work)
@@ -792,10 +795,12 @@ wts_open_uri() {
   esac
 }
 
-cmd_session_uri() {  # action, session timestamp
+cmd_session_uri() {  # action, [--background], session timestamp
   local action="$1" sid="${2:-}"
+  # Claude in a hidden terminal of the current window: for a session driven by another Claude
+  if [[ "$action" == claude && "$sid" == --background ]]; then action=claude-background; sid="${3:-}"; fi
   if [[ ! "$sid" =~ '^[0-9]{8}-[0-9]{6}$' ]]; then
-    err "usage: wts $action <session timestamp, e.g. 20261125-110907>"
+    err "usage: wts ${action/claude-background/claude --background} <session timestamp, e.g. 20261125-110907>"
     return 1
   fi
   wts_open_uri "${WTS_VSCODE_SCHEME:-vscode}://tec0r.worktree-station/${action}?session=${sid}"

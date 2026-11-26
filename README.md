@@ -271,6 +271,12 @@ attaches to it: diffs in the editor, `@`-mentions, current selection. Hence the
 claude --add-dir '<every other worktree of the session>'
 ```
 
+`wts claude --background <session>` starts the same Claude in a **hidden** terminal of
+the current window: no window opens, and the Claude is reachable by another Claude
+session (a supervising one, say) through `SendMessage`. The session's ✦ button then
+shows that terminal instead of starting a second Claude, so a permission prompt can
+be answered there. Closing the window stops it.
+
 When the worktree already has a Claude conversation, the button adds `--continue`
 and reopens it, so Claude keeps what it learned on that session (unless
 `worktreeStation.claudeArgs` already picks a conversation). The panel does the same
@@ -302,6 +308,7 @@ session (or a script) can run the other sessions without clicking:
 
 ```sh
 wts claude 20261125-110907        # open Claude Code on that session (claudeMode applies)
+wts claude --background 20261125-110907  # same, hidden terminal, no window (for a supervising Claude)
 wts claude-close 20261125-110907  # close its Claude terminal
 wts claude-panel 20261125-110907  # the session alone in a window, Claude panel open
 wts open 20261125-110907          # open the session in its own window

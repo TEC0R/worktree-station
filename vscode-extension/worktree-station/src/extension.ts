@@ -468,6 +468,7 @@ function migrateLegacyState(ctx: vscode.ExtensionContext): void {
 // No delete here: any web page can open a vscode:// link. Deletion is `wts rm`, shell only.
 const URI_ACTIONS: Record<string, string> = {
   "/claude": "worktreeStation.session.claude",
+  "/claude-background": "worktreeStation.session.claudeBackground",
   "/claude-close": "worktreeStation.session.claudeClose",
   "/claude-panel": "worktreeStation.session.claudePanel",
   "/open": "worktreeStation.session.openWindow",
@@ -579,6 +580,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!(n instanceof SessionNode)) {
         return;
       }
+      // A Claude already running here (a background one included) is shown, never doubled.
+      if (claude.reveal(claude.sessionKey(n.session))) {
+        return;
+      }
       // Two mutually exclusive ways to get Claude on a session:
       //  - terminal: same window, cwd = the worktree, several sessions in parallel
       //  - window  : Claude panel, but its cwd is workspaceFolders[0], so the
@@ -588,6 +593,12 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       claude.openForSession(n.session);
+    }),
+    // For another Claude session (a chief of staff) that works through this one: no window opens.
+    reg("worktreeStation.session.claudeBackground", (n: unknown) => {
+      if (n instanceof SessionNode) {
+        claude.openForSession(n.session, true);
+      }
     }),
     reg("worktreeStation.session.claudePanel", async (n: unknown) => {
       if (n instanceof SessionNode) {

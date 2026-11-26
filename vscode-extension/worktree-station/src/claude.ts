@@ -135,10 +135,23 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-function launch(key: string, cwd: string, addDirs: string[], title: string): void {
+/** Shows the Claude terminal already open on this key, hidden or not; false when there is none. */
+export function reveal(key: string): boolean {
+  const term = terminals.get(key);
+  term?.show();
+  return term !== undefined;
+}
+
+/**
+ * `hidden`: the terminal is created without being shown (no window, no tab), for a Claude another
+ * session talks to; `reveal` shows it when the user wants to look or answer a permission prompt.
+ */
+function launch(key: string, cwd: string, addDirs: string[], title: string, hidden = false): void {
   const existing = terminals.get(key);
   if (existing) {
-    existing.show();
+    if (!hidden) {
+      existing.show();
+    }
     return;
   }
 
@@ -147,6 +160,7 @@ function launch(key: string, cwd: string, addDirs: string[], title: string): voi
     cwd,
     iconPath: new vscode.ThemeIcon("sparkle"),
     isTransient: true,
+    hideFromUser: hidden,
     env: { CLAUDE_CODE_TERMINAL_TITLE: title },
   });
   terminals.set(key, term);
@@ -161,14 +175,16 @@ function launch(key: string, cwd: string, addDirs: string[], title: string): voi
     ...addDirs.flatMap((d) => ["--add-dir", shellQuote(d)]),
     ...extra.map(shellQuote),
   ];
-  term.show();
+  if (!hidden) {
+    term.show();
+  }
   // sendText rather than a direct shellPath: we want the login shell, hence the
   // PATH, nvm and ~/.config/wts/secrets.env loaded by ~/.zshrc.
   term.sendText([bin, ...args].join(" "));
 }
 
 /** One Claude for the whole session: rooted at the dbt worktree, the others as --add-dir. */
-export function openForSession(s: Session): void {
+export function openForSession(s: Session, hidden = false): void {
   const live = s.worktrees.filter((w) => w.exists);
   if (live.length === 0) {
     vscode.window.showWarningMessage("This session has no worktree on disk.");
@@ -176,7 +192,7 @@ export function openForSession(s: Session): void {
   }
   const primary = live.find((w) => w.kind === "dbt") ?? live[0];
   const others = live.filter((w) => w.path !== primary.path).map((w) => w.path);
-  launch(sessionKey(s), primary.path, others, `Claude ${s.label}`);
+  launch(sessionKey(s), primary.path, others, `Claude ${s.label}`, hidden);
 }
 
 /** One Claude for a single worktree, with no access to the others. */
