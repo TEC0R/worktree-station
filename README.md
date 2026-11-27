@@ -284,16 +284,43 @@ attaches to it: diffs in the editor, `@`-mentions, current selection. Hence the
 claude --add-dir '<every other worktree of the session>'
 ```
 
-`wts claude --background <session>` starts the same Claude for another Claude session
-(a supervising one, say) that reaches it through `SendMessage`. In `terminal` mode it runs
-in a **hidden** terminal of the current window: no window opens, and the session's ✦
-button then shows that terminal instead of starting a second Claude, so a permission
-prompt can be answered there. Closing the window stops it. In `window` mode it opens
-the session's window with its Claude panel, as the button does, since the panel cannot
-run hidden.
+`wts claude --brief <file> <session>` starts it with the file's text as its first
+message:
+
+```sh
+# what the terminal runs; `--` keeps --add-dir from taking the brief for a folder
+claude --add-dir '<other worktrees>' -- "$(cat '<home>/.config/wts/briefs/used/<session>-<token>.md')"
+```
+
+In `window` mode the brief starts Claude in a terminal of the session's window, not in
+its panel: the Claude Code panel accepts a starting prompt but only pre-fills its input
+with it, so the brief would never be sent. When Claude already runs in the session (a
+panel in any window included), the brief is refused with an error and never typed into
+that conversation; the file stays in `briefs/used/`.
+
+`wts claude --background --brief <file> <session>` starts the same Claude for another
+Claude session (a supervising one, say) that reaches it through `SendMessage`. The brief
+is required there: a Claude started for someone else and left without its first message
+sits idle with no one watching. In `terminal` mode it runs in a **hidden** terminal of
+the current window: no window opens, and the session's ✦ button then shows that
+terminal instead of starting a second Claude, so a permission prompt can be answered
+there. Closing the window stops it. In `window` mode it opens the session's window with
+Claude in a terminal there, as above.
+
+Any web page can open a `vscode://` link, so the link never carries the brief's path:
+`wts` copies the file (mode `600`) to `~/.config/wts/briefs/pending/<session>-<token>.md`
+and passes only the random token. The extension reads briefs from that folder alone and
+moves each one to `briefs/used/` on first use, so a token works once.
+
+`wts` then waits up to 15 s (`WTS_BRIEF_WAIT`) for that move. Without it, it removes the
+brief from `pending/` and exits with an error: the link reached no window able to read it,
+typically a window opened before the extension was last installed, which runs the older
+code until it is reloaded. A refusal (Claude already running) still counts as picked up and
+shows only as a VS Code notification.
 
 When the worktree already has a Claude conversation, the button adds `--continue`
-and reopens it, so Claude keeps what it learned on that session (unless
+and reopens it, so Claude keeps what it learned on that session; a brief then arrives
+as the next message of that conversation (unless
 `worktreeStation.claudeArgs` already picks a conversation). The panel does the same
 through `claude-vscode.editor.openLast`.
 
@@ -323,7 +350,8 @@ session (or a script) can run the other sessions without clicking:
 
 ```sh
 wts claude 20261125-110907        # open Claude Code on that session (claudeMode applies)
-wts claude --background 20261125-110907  # same, for a supervising Claude: hidden terminal (terminal mode) or window (window mode)
+wts claude --brief brief.md 20261125-110907  # same, brief.md sent as Claude's first message
+wts claude --background --brief brief.md 20261125-110907  # for a supervising Claude, brief required: hidden terminal (terminal mode) or window (window mode)
 wts claude-close 20261125-110907  # close its Claude terminal
 wts claude-panel 20261125-110907  # the session alone in a window, Claude panel open
 wts open 20261125-110907          # open the session in its own window
@@ -336,7 +364,7 @@ wts inbox                         # sessions waiting on a human; --json, --clear
 ```
 
 `claude`, `claude-close`, `claude-panel` and `open` go through the extension's URL handler
-(`vscode://tec0r.worktree-station/<action>?session=<id>`; `WTS_VSCODE_SCHEME`
+(`vscode://tec0r.worktree-station/<action>?session=<id>[&brief=<token>]`; `WTS_VSCODE_SCHEME`
 picks another editor build): VS Code routes the link to its last focused
 window. `rm` stays in the shell on purpose (any web page can open a `vscode://`
 link): it refuses a session holding uncommitted or unpushed work unless `--force`,

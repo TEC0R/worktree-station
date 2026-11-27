@@ -759,10 +759,15 @@ ${C_B}dbt${C_RST}  ${C_DIM}(from any worktree)${C_RST}
 
 ${C_B}Agents${C_RST}  ${C_DIM}(state in ~/.config/wts/state.json, shared with the extension)${C_RST}
   wts claude <session>      start Claude in the session (through the extension)
-  wts claude --background <session>
-                            claudeMode terminal: same, in a hidden terminal of the current
-                            window (no new window), the session's ✦ button shows it;
-                            claudeMode window: opens the session's window, as above
+  wts claude --brief <file> <session>
+                            same, the file's text sent as Claude's first message; claudeMode
+                            window then starts Claude in a terminal of the session's window
+                            (the panel only pre-fills a prompt); refused if Claude already runs;
+                            fails if VS Code has not picked the brief up within 15 s
+  wts claude --background --brief <file> <session>
+                            for another Claude session, brief required. claudeMode terminal:
+                            hidden terminal of the current window, the session's ✦ button
+                            shows it; claudeMode window: as above
   wts claude-close <session> close the session's Claude
   wts claude-panel <session> open the session alone in a window, Claude panel open
   wts rm <session> [--force] delete the session: worktrees, windows, card (refuses unpushed work)
@@ -796,15 +801,69 @@ wts_open_uri() {
   esac
 }
 
-cmd_session_uri() {  # action, [--background], session timestamp
-  local action="$1" sid="${2:-}"
-  # Claude in a hidden terminal of the current window: for a session driven by another Claude
-  if [[ "$action" == claude && "$sid" == --background ]]; then action=claude-background; sid="${3:-}"; fi
-  if [[ ! "$sid" =~ '^[0-9]{8}-[0-9]{6}$' ]]; then
-    err "usage: wts ${action/claude-background/claude --background} <session timestamp, e.g. 20261125-110907>"
+cmd_session_uri() {  # action, [--background] [--brief <file>], session timestamp
+  local action="$1" sid="" brief="" background=""
+  shift
+  local usage="usage: wts $action <session timestamp, e.g. 20261125-110907>"
+  [[ "$action" == claude ]] && usage="usage: wts claude [--background] [--brief <file>] <session timestamp, e.g. 20261125-110907>"
+  while (( $# )); do
+    case "$1" in
+      --background|--brief)
+        [[ "$action" == claude ]] || { err "$1 only applies to wts claude"; return 1; }
+        if [[ "$1" == --background ]]; then
+          background=1
+        else
+          [[ -n "${2:-}" ]] || { err "--brief expects a file"; return 1; }
+          brief="$2"; shift
+        fi ;;
+      -*) err "unknown option: $1"; err "$usage"; return 1 ;;
+      *)  [[ -z "$sid" ]] || { err "one session only"; err "$usage"; return 1; }
+          sid="$1" ;;
+    esac
+    shift
+  done
+  [[ "$sid" =~ '^[0-9]{8}-[0-9]{6}$' ]] || { err "$usage"; return 1; }
+  # A Claude started for another session that never gets its first message sits idle, unseen.
+  if [[ -n "$background" && -z "$brief" ]]; then
+    err "wts claude --background needs --brief <file>: the brief is the first message of that Claude"
     return 1
   fi
-  wts_open_uri "${WTS_VSCODE_SCHEME:-vscode}://tec0r.worktree-station/${action}?session=${sid}"
+
+  local query="session=$sid" pending=""
+  if [[ -n "$brief" ]]; then
+    [[ -f "$brief" && -r "$brief" ]] || { err "brief not found: $brief"; return 1; }
+    [[ -s "$brief" ]] || { err "brief is empty: $brief"; return 1; }
+    local size; size=$(wc -c < "$brief")
+    (( size <= 102400 )) || { err "brief too large: $size bytes (100 KB max)"; return 1; }
+    # Any web page can open a vscode:// link: the link carries a one-use token, never a path,
+    # and the extension only reads briefs from this folder, which only wts writes to.
+    local dir="${WTS_CONFIG_DIR:-$HOME/.config/wts}/briefs/pending" token
+    token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    [[ "$token" =~ '^[0-9a-f]{32}$' ]] || { err "cannot draw a brief token"; return 1; }
+    pending="$dir/$sid-$token.md"
+    ( umask 077 && mkdir -p "$dir" && cp "$brief" "$pending" ) || { err "cannot copy the brief to $dir"; return 1; }
+    query+="&brief=$token"
+  fi
+  [[ -n "$background" ]] && action=claude-background
+  if ! wts_open_uri "${WTS_VSCODE_SCHEME:-vscode}://tec0r.worktree-station/${action}?${query}"; then
+    [[ -n "$pending" ]] && rm -f "$pending"
+    err "cannot reach VS Code"; return 1
+  fi
+  [[ -n "$pending" ]] || return 0
+
+  # The one thing wts can see of what the extension does with the link: a brief moved from
+  # pending/ to used/ was picked up. A window still running an older extension drops the brief
+  # without a word, and the sender would wait on an empty session.
+  local used="${pending:h:h}/used/${pending:t}" wait="${WTS_BRIEF_WAIT:-15}" i
+  for (( i = 0; i < wait * 5; i++ )); do
+    [[ -f "$used" ]] && { ok "brief picked up by VS Code"; return 0; }
+    sleep 0.2
+  done
+  rm -f "$pending"
+  # Picked up between the last check and the removal: not a failure.
+  [[ -f "$used" ]] && { ok "brief picked up by VS Code"; return 0; }
+  err "brief not picked up by VS Code in ${wait} s: reload the windows opened before the last install"
+  return 1
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────

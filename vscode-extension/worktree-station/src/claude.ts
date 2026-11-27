@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { Session, Worktree } from "./api";
+import { claudeCommand } from "./brief";
 import { claudeRunningIn } from "./running";
 
 /**
@@ -69,6 +70,54 @@ async function consumePanelRequest(): Promise<void> {
     );
   }
 }
+const PENDING_TERMINAL_KEY = "worktreeStation.pendingClaudeTerminal";
+/** Past this age, the window the request was meant for never woke up on it: dropped, not run. */
+const PENDING_MAX_MS = 10 * 60_000;
+
+interface TerminalRequest {
+  workspace: string;
+  session: string;
+  brief: string;
+  at: number;
+}
+
+let findSession: ((id: string) => Promise<Session | undefined>) | undefined;
+
+/**
+ * Window mode with a brief. The Claude Code panel only pre-fills its input with a starting prompt
+ * and never sends it, so the session's window starts a terminal Claude instead, through the same
+ * shared-globalState relay as markPanelWanted.
+ */
+export function markTerminalWanted(workspace: string, session: string, brief: string): void {
+  // One entry per window: two sessions started back to back must not overwrite each other.
+  const all = { ...state?.get<Record<string, TerminalRequest>>(PENDING_TERMINAL_KEY) };
+  all[workspace] = { workspace, session, brief, at: Date.now() };
+  void state?.update(PENDING_TERMINAL_KEY, all);
+}
+
+async function consumeTerminalRequest(): Promise<void> {
+  const here = vscode.workspace.workspaceFile?.fsPath;
+  const all = { ...state?.get<Record<string, TerminalRequest>>(PENDING_TERMINAL_KEY) };
+  const req = here ? all[here] : undefined;
+  if (!here || !req) {
+    return;
+  }
+  delete all[here];
+  await state?.update(PENDING_TERMINAL_KEY, all);
+  if (Date.now() - req.at > PENDING_MAX_MS) {
+    vscode.window.showWarningMessage(
+      `Brief not sent: its request is older than 10 minutes (kept in ${req.brief}).`,
+    );
+    return;
+  }
+  const s = await findSession?.(req.session);
+  if (!s) {
+    vscode.window.showErrorMessage(`Brief not sent: no session ${req.session} (kept in ${req.brief}).`);
+    return;
+  }
+  openForSession(s, false, req.brief);
+}
+
 /** Claude Code's editor panel; VS Code prefixes webview view types, hence the includes. */
 const PANEL_VIEW_TYPE = "claudeVSCodePanel";
 
@@ -95,11 +144,23 @@ export function alreadyRunning(folders: string[], label: string): boolean {
 const emitter = new vscode.EventEmitter<void>();
 export const onDidChangeClaude = emitter.event;
 
-export function initClaude(context: vscode.ExtensionContext): void {
+export function initClaude(
+  context: vscode.ExtensionContext,
+  sessionById: (id: string) => Promise<Session | undefined>,
+): void {
   state = context.globalState;
+  findSession = sessionById;
   void consumePanelRequest();
+  void consumeTerminalRequest();
   context.subscriptions.push(
     emitter,
+    // A session window already open is only focused, not reloaded: activation alone would miss
+    // the request, and the brief would never be sent.
+    vscode.window.onDidChangeWindowState((w) => {
+      if (w.focused) {
+        void consumeTerminalRequest();
+      }
+    }),
     vscode.window.onDidCloseTerminal((t) => {
       for (const [key, term] of terminals) {
         if (term === t) {
@@ -158,13 +219,6 @@ export function hasConversation(
   }
 }
 
-const PICKS_CONVERSATION = new Set(["-c", "--continue", "-r", "--resume", "--session-id"]);
-
-/** Single quotes for the shell: nothing is interpreted, except the quote itself. */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
 /** Shows the Claude terminal already open on this key, hidden or not; false when there is none. */
 export function reveal(key: string): boolean {
   const term = terminals.get(key);
@@ -176,10 +230,19 @@ export function reveal(key: string): boolean {
  * `hidden`: the terminal is created without being shown (no window, no tab), for a Claude another
  * session talks to; `reveal` shows it when the user wants to look or answer a permission prompt.
  */
-function launch(key: string, cwd: string, addDirs: string[], title: string, hidden = false): void {
+function launch(
+  key: string,
+  cwd: string,
+  addDirs: string[],
+  title: string,
+  hidden = false,
+  brief?: string,
+): void {
   const existing = terminals.get(key);
   if (existing) {
-    if (!hidden) {
+    if (brief) {
+      briefRefused(key, brief);
+    } else if (!hidden) {
       existing.show();
     }
     return;
@@ -196,36 +259,53 @@ function launch(key: string, cwd: string, addDirs: string[], title: string, hidd
   terminals.set(key, term);
   emitter.fire();
 
-  const bin = cfg("claudePath", "claude");
-  const extra = cfg<string[]>("claudeArgs", []);
-  // claudeArgs may already pick a conversation: never pass two.
-  const resume = !extra.some((a) => PICKS_CONVERSATION.has(a)) && hasConversation(cwd);
-  const args = [
-    ...(resume ? ["--continue"] : []),
-    ...addDirs.flatMap((d) => ["--add-dir", shellQuote(d)]),
-    ...extra.map(shellQuote),
-  ];
   if (!hidden) {
     term.show();
   }
   // sendText rather than a direct shellPath: we want the login shell, hence the
   // PATH, nvm and ~/.config/wts/secrets.env loaded by ~/.zshrc.
-  term.sendText([bin, ...args].join(" "));
+  term.sendText(
+    claudeCommand({
+      bin: cfg("claudePath", "claude"),
+      extra: cfg<string[]>("claudeArgs", []),
+      addDirs,
+      hasConversation: hasConversation(cwd),
+      brief,
+    }),
+  );
 }
 
-/** One Claude for the whole session: rooted at the dbt worktree, the others as --add-dir. */
-export function openForSession(s: Session, hidden = false): void {
+/**
+ * A brief is never typed into a Claude that already runs: its conversation is someone else's
+ * context. The refusal is loud, so that the sender does not wait on a session that never got it.
+ */
+export function briefRefused(label: string, brief: string): void {
+  vscode.window.showErrorMessage(
+    `Claude is already running in ${label}: the brief was not sent (kept in ${brief}).`,
+  );
+}
+
+/**
+ * One Claude for the whole session: rooted at the dbt worktree, the others as --add-dir.
+ * `brief`: path of a claimed brief, sent as the first message.
+ */
+export function openForSession(s: Session, hidden = false, brief?: string): void {
   const live = s.worktrees.filter((w) => w.exists);
   if (live.length === 0) {
     vscode.window.showWarningMessage("This session has no worktree on disk.");
     return;
   }
-  if (alreadyRunning(live.map((w) => w.path), s.label)) {
+  const folders = live.map((w) => w.path);
+  if (brief && claudeRunningIn(folders)) {
+    briefRefused(s.label, brief);
+    return;
+  }
+  if (alreadyRunning(folders, s.label)) {
     return;
   }
   const primary = live.find((w) => w.kind === "dbt") ?? live[0];
   const others = live.filter((w) => w.path !== primary.path).map((w) => w.path);
-  launch(sessionKey(s), primary.path, others, `Claude ${s.label}`, hidden);
+  launch(sessionKey(s), primary.path, others, `Claude ${s.label}`, hidden, brief);
 }
 
 /** One Claude for a single worktree, with no access to the others. */

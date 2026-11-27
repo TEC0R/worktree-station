@@ -6,10 +6,12 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import * as api from "./api";
 import { Worktree } from "./api";
+import { claimBrief } from "./brief";
 import * as claude from "./claude";
 import * as dashboard from "./dashboard";
 import * as repoAdmin from "./repos";
 import { clearRuns, initRuns, quiet, task, terminal, withProgress } from "./run";
+import { claudeRunningIn } from "./running";
 import * as windows from "./windows";
 import {
   dbtFoldersInWorkspace,
@@ -473,19 +475,32 @@ const URI_ACTIONS: Record<string, string> = {
   "/claude-panel": "worktreeStation.session.claudePanel",
   "/open": "worktreeStation.session.openWindow",
 };
+/** `&brief=<token>` (see brief.ts): the first message of the Claude these actions start. */
+const BRIEF_ACTIONS = new Set(["/claude", "/claude-background"]);
 
 async function handleUri(uri: vscode.Uri): Promise<void> {
   const command = URI_ACTIONS[uri.path];
   if (!command) {
     throw new Error(`unknown action ${uri.path}; known: ${Object.keys(URI_ACTIONS).join(", ")}`);
   }
-  const id = new URLSearchParams(uri.query).get("session") ?? "";
+  const params = new URLSearchParams(uri.query);
+  const id = params.get("session") ?? "";
+  const token = params.get("brief");
+  if (token !== null && !BRIEF_ACTIONS.has(uri.path)) {
+    throw new Error(`a brief only applies to ${[...BRIEF_ACTIONS].join(", ")}`);
+  }
   const s = (await api.sessions()).find((x) => x.id === id);
   if (!s) {
     throw new Error(`no session ${id || "(missing ?session=)"}`);
   }
+  // Claimed before the action runs: a refused action still names where the brief is kept.
+  const brief = token !== null ? claimBrief(id, token) : undefined;
   const open = new Set((vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath));
-  await vscode.commands.executeCommand(command, new SessionNode(s, s.worktrees.some((w) => open.has(w.path))));
+  await vscode.commands.executeCommand(
+    command,
+    new SessionNode(s, s.worktrees.some((w) => open.has(w.path))),
+    brief,
+  );
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -495,7 +510,7 @@ export function activate(context: vscode.ExtensionContext): void {
   repos = new ReposProvider();
   runsView = new RunsProvider();
   initRuns(context);
-  claude.initClaude(context);
+  claude.initClaude(context, async (id) => (await api.sessions(true)).find((s) => s.id === id));
   dashboard.initDashboard(context);
   windows.initWindows(context);
 
@@ -530,7 +545,7 @@ export function activate(context: vscode.ExtensionContext): void {
         await refreshAll();
       }
     }),
-    reg("worktreeStation.session.openWindow", async (n: unknown, withClaude?: boolean) => {
+    reg("worktreeStation.session.openWindow", async (n: unknown, withClaude?: boolean, brief?: string) => {
       if (!(n instanceof SessionNode)) {
         return;
       }
@@ -570,7 +585,18 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       // A Claude already running in the session: its window is shown, no second one is asked for.
       const folders = n.session.worktrees.filter((w) => w.exists).map((w) => w.path);
-      if (
+      if (withClaude && brief) {
+        // The panel would only pre-fill the brief: a terminal Claude in the session's window sends it.
+        if (claudeRunningIn(folders)) {
+          claude.briefRefused(n.session.label, brief);
+          return;
+        }
+        if (vscode.workspace.workspaceFile?.fsPath === ws) {
+          claude.openForSession(n.session, false, brief);
+          return;
+        }
+        claude.markTerminalWanted(ws, n.session.id, brief);
+      } else if (
         withClaude &&
         claude.claudeExtensionAvailable() &&
         !claude.alreadyRunning(folders, n.session.label)
@@ -582,12 +608,17 @@ export function activate(context: vscode.ExtensionContext): void {
       });
     }),
     reg("worktreeStation.session.delete", (n: unknown) => deleteSession(n).catch(fail)),
-    reg("worktreeStation.session.claude", async (n: unknown) => {
+    reg("worktreeStation.session.claude", async (n: unknown, brief?: string) => {
       if (!(n instanceof SessionNode)) {
         return;
       }
       // A Claude already running here (a background one included) is shown, never doubled.
-      if (claude.reveal(claude.sessionKey(n.session))) {
+      const key = claude.sessionKey(n.session);
+      if (brief && claude.hasClaude(key)) {
+        claude.briefRefused(n.session.label, brief);
+        return;
+      }
+      if (claude.reveal(key)) {
         return;
       }
       // Two mutually exclusive ways to get Claude on a session:
@@ -595,23 +626,30 @@ export function activate(context: vscode.ExtensionContext): void {
       //  - window  : Claude panel, but its cwd is workspaceFolders[0], so the
       //              session must be alone in its window.
       if (cfg<string>("claudeMode", "terminal") === "window") {
-        await vscode.commands.executeCommand("worktreeStation.session.openWindow", n, true);
+        await vscode.commands.executeCommand("worktreeStation.session.openWindow", n, true, brief);
         return;
       }
-      claude.openForSession(n.session);
+      claude.openForSession(n.session, false, brief);
     }),
     // For another Claude session (a chief of staff) that works through this one. In terminal mode
-    // no window opens: a hidden terminal. In window mode the Claude panel is the only way, so the
-    // session's window opens as with the button.
-    reg("worktreeStation.session.claudeBackground", async (n: unknown) => {
+    // no window opens: a hidden terminal. In window mode the session's window opens as with the
+    // button, its Claude in a terminal. Always with a brief: a Claude started for someone else and
+    // left without its first message sits idle with no one watching.
+    reg("worktreeStation.session.claudeBackground", async (n: unknown, brief?: string) => {
       if (!(n instanceof SessionNode)) {
         return;
       }
-      if (cfg<string>("claudeMode", "terminal") === "window") {
-        await vscode.commands.executeCommand("worktreeStation.session.claude", n);
+      if (!brief) {
+        vscode.window.showErrorMessage(
+          `Claude not started in ${n.session.label}: a background start needs a brief (wts claude --background --brief <file>).`,
+        );
         return;
       }
-      claude.openForSession(n.session, true);
+      if (cfg<string>("claudeMode", "terminal") === "window") {
+        await vscode.commands.executeCommand("worktreeStation.session.claude", n, brief);
+        return;
+      }
+      claude.openForSession(n.session, true, brief);
     }),
     reg("worktreeStation.session.claudePanel", async (n: unknown) => {
       if (n instanceof SessionNode) {
